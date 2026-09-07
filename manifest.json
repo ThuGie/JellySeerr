@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.2.0",
+        "changelog": "Hide Seerr and *arr links from remote users. Request and discover cards now show play, status, quota, and season state.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.2.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "3E5E0A769415A399B13A543E8831F954",
+        "timestamp": "2026-09-07T05:46:07.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.1.0",
         "changelog": "Open a request for cancel/watchlist/approve, group the settings page, show download sizes in KB/MB/GB, and refresh the Requests tab once a minute by default.",
         "targetAbi": "10.11.0.0",
