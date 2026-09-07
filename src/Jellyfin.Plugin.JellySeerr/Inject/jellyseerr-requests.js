@@ -514,17 +514,20 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }
 
         const isFailed = progress.statusKey === 'failed' || (item.mediaStatusLabel || '').toLowerCase() === 'failed';
-        const percent = isFailed ? 100 : Math.max(0, Math.min(100, Number(progress.percent) || 0));
+        const isMissing = progress.statusKey === 'missing-monitored' || progress.statusKey === 'missing-unmonitored';
+        const percent = isFailed || isMissing ? 100 : Math.max(0, Math.min(100, Number(progress.percent) || 0));
         const statusKey = isFailed ? 'failed' : escapeHtml(progress.statusKey);
         const isQueued = progress.statusKey === 'queued';
         const sizeText = formatTransfer(progress.downloadedBytes, progress.totalBytes);
 
         const percentText = isFailed
             ? 'Failed'
-            : (isQueued ? `${percent}%` : (progress.statusLabel || ''));
+            : (isMissing
+                ? (progress.statusLabel || (progress.statusKey === 'missing-unmonitored' ? 'Unmonitored' : 'No downloads'))
+                : (isQueued ? `${percent}%` : (progress.statusLabel || '')));
         const detailText = isFailed
             ? 'Failed to find content'
-            : sizeText;
+            : (isMissing ? 'No downloads' : sizeText);
 
         const openUrl = canOpenLocalServices() ? (progress.openUrl || '') : '';
         const openAttr = openUrl ? ` data-open-url="${escapeHtml(openUrl)}" role="link"` : '';

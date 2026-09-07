@@ -33,18 +33,18 @@ public sealed class ServarrProgressService
 
         try
         {
-            if (isTv)
+            async Task<(int StatusCode, string Body, string ContentType)?> TryUnmonitorSeriesAsync()
             {
                 if (!IsSonarrConfigured(config))
                 {
-                    return MessageResult(400, "Sonarr is not configured in JellySeerr.");
+                    return null;
                 }
 
                 using HttpClient client = CreateClient(config.SonarrUrl!, config.SonarrApiKey!);
                 JObject? series = await FindByTmdbAsync(client, "series", tmdbId, cancellationToken).ConfigureAwait(false);
                 if (series == null)
                 {
-                    return MessageResult(404, "This show is not in Sonarr.");
+                    return null;
                 }
 
                 HashSet<int> seasonNumbers = seasons?.Where(n => n >= 0).ToHashSet() ?? new HashSet<int>();
@@ -96,32 +96,62 @@ public sealed class ServarrProgressService
                 return MessageResult(200, "Unmonitored in Sonarr. Existing files were left on disk.");
             }
 
-            if (!IsRadarrConfigured(config))
+            async Task<(int StatusCode, string Body, string ContentType)?> TryUnmonitorMovieAsync()
             {
-                return MessageResult(400, "Radarr is not configured in JellySeerr.");
+                if (!IsRadarrConfigured(config))
+                {
+                    return null;
+                }
+
+                using HttpClient radarr = CreateClient(config.RadarrUrl!, config.RadarrApiKey!);
+                JObject? movie = await FindByTmdbAsync(radarr, "movie", tmdbId, cancellationToken).ConfigureAwait(false);
+                if (movie == null)
+                {
+                    return null;
+                }
+
+                movie["monitored"] = false;
+                int? movieId = movie.Value<int?>("id");
+                if (!movieId.HasValue)
+                {
+                    return MessageResult(500, "Radarr did not return a movie id.");
+                }
+
+                if (!await PutJsonAsync(radarr, $"movie/{movieId.Value}", movie, cancellationToken).ConfigureAwait(false))
+                {
+                    return MessageResult(502, "Radarr rejected the unmonitor update.");
+                }
+
+                JsonMemoryCache.RemoveByPrefix("servarr:radarr:");
+                return MessageResult(200, "Unmonitored in Radarr. Existing files were left on disk.");
             }
 
-            using HttpClient radarr = CreateClient(config.RadarrUrl!, config.RadarrApiKey!);
-            JObject? movie = await FindByTmdbAsync(radarr, "movie", tmdbId, cancellationToken).ConfigureAwait(false);
-            if (movie == null)
+            (int StatusCode, string Body, string ContentType)? preferred = isTv
+                ? await TryUnmonitorSeriesAsync().ConfigureAwait(false)
+                : await TryUnmonitorMovieAsync().ConfigureAwait(false);
+            if (preferred != null)
             {
-                return MessageResult(404, "This movie is not in Radarr.");
+                return preferred.Value;
             }
 
-            movie["monitored"] = false;
-            int? movieId = movie.Value<int?>("id");
-            if (!movieId.HasValue)
+            (int StatusCode, string Body, string ContentType)? fallback = isTv
+                ? await TryUnmonitorMovieAsync().ConfigureAwait(false)
+                : await TryUnmonitorSeriesAsync().ConfigureAwait(false);
+            if (fallback != null)
             {
-                return MessageResult(500, "Radarr did not return a movie id.");
+                return fallback.Value;
             }
 
-            if (!await PutJsonAsync(radarr, $"movie/{movieId.Value}", movie, cancellationToken).ConfigureAwait(false))
+            if (isTv)
             {
-                return MessageResult(502, "Radarr rejected the unmonitor update.");
+                return IsSonarrConfigured(config)
+                    ? MessageResult(404, "This show is not in Sonarr.")
+                    : MessageResult(400, "Sonarr is not configured in JellySeerr.");
             }
 
-            JsonMemoryCache.RemoveByPrefix("servarr:radarr:");
-            return MessageResult(200, "Unmonitored in Radarr. Existing files were left on disk.");
+            return IsRadarrConfigured(config)
+                ? MessageResult(404, "This movie is not in Radarr.")
+                : MessageResult(400, "Radarr is not configured in JellySeerr.");
         }
         catch (Exception ex)
         {

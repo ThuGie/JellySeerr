@@ -476,35 +476,73 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return Number.isNaN(asNum) ? null : asNum;
     }
 
+    function pendingContextMatches(is4k) {
+        return !!(pendingRequestContext && pendingRequestContext.requestId && !!pendingRequestContext.is4k === !!is4k);
+    }
+
+    function pendingContextIsActive(is4k) {
+        if (!pendingContextMatches(is4k)) {
+            return false;
+        }
+        if (pendingRequestContext.isPending || pendingRequestContext.isFailed) {
+            return true;
+        }
+        const status = Number(pendingRequestContext.requestStatus);
+        return status === 1 || status === 2 || status === 4;
+    }
+
+    function hasActiveRequest(data, is4k) {
+        return getRequestRecords(data).some(function (req) {
+            if (!!is4k !== requestIs4k(req)) {
+                return false;
+            }
+            const status = requestStatusOf(req);
+            return status === 1 || status === 2 || status === 4;
+        }) || pendingContextIsActive(is4k);
+    }
+
+    function getEditableRequests(data, is4k) {
+        return getRequestRecords(data).filter(function (req) {
+            if (!!is4k !== requestIs4k(req)) {
+                return false;
+            }
+            const status = requestStatusOf(req);
+            return (status === 1 || status === 2) && requestIdOf(req);
+        });
+    }
+
     function getRequestButtonState(data, is4k) {
         const defaultLabel = is4k ? 'Request 4K' : 'Request';
-        const info = data && data.mediaInfo;
+        const info = data && (data.mediaInfo || data.media_info);
         const raw = is4k
             ? (info && (info.status4k != null ? info.status4k : info.status4K)) ?? (data && data.status4k)
             : (info && info.status != null ? info.status : (data && data.status));
         const status = normalizeMediaStatus(raw);
+        const active = hasActiveRequest(data, is4k);
 
-        // Seerr mediaInfo means HD was already requested
-        if (!is4k && info && (status == null || status <= 1)) {
-            return { requested: true, label: 'Already requested' };
+        if (status === 5) {
+            return { requested: true, label: 'Available' };
         }
-
-        if (status == null || status <= 1 || status === 6) {
-            return { requested: false, label: defaultLabel };
+        if (status === 7) {
+            return { requested: true, label: 'Blocklisted' };
         }
-
-        // Some seasons/eps are present (more seasons should still be able to be requested)
         if (status === 4) {
             return { requested: false, label: is4k ? defaultLabel : 'Request seasons' };
         }
 
-        const labels = {
-            2: 'Pending',
-            3: 'Processing',
-            5: 'Available',
-            7: 'Blocklisted'
-        };
-        return { requested: true, label: labels[status] || 'Already requested' };
+        // After cancel, Seerr often leaves an empty mediaInfo stub (unknown/processing)
+        // with no live request. That must be requestable again.
+        if (!active) {
+            return { requested: false, label: defaultLabel };
+        }
+
+        if (status === 2) {
+            return { requested: true, label: 'Pending' };
+        }
+        if (status === 3) {
+            return { requested: true, label: 'Processing' };
+        }
+        return { requested: true, label: 'Already requested' };
     }
 
     function pickVal(obj) {
@@ -661,10 +699,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
         window.open(base + '/' + segment + '/' + tmdbId + '?manage=1', '_blank', 'noopener,noreferrer');
     }
 
-    function canUnmonitor(mediaType) {
-        return mediaType === 'tv'
-            ? !!(pickVal(clientSettingsCache, 'sonarrConfigured', 'SonarrConfigured') || pickVal(clientSettingsCache, 'sonarrUrl', 'SonarrUrl'))
-            : !!(pickVal(clientSettingsCache, 'radarrConfigured', 'RadarrConfigured') || pickVal(clientSettingsCache, 'radarrUrl', 'RadarrUrl'));
+    function canUnmonitor() {
+        return !!(pickVal(clientSettingsCache, 'sonarrConfigured', 'SonarrConfigured') || pickVal(clientSettingsCache, 'sonarrUrl', 'SonarrUrl'))
+            || !!(pickVal(clientSettingsCache, 'radarrConfigured', 'RadarrConfigured') || pickVal(clientSettingsCache, 'radarrUrl', 'RadarrUrl'));
     }
 
     function isOnWatchlist(data) {
@@ -717,11 +754,25 @@ window.jellySeerrLog = window.jellySeerrLog || {
             parts.push(`<button type="button" class="bst-btn-trailer" data-action="retry-request" data-request-id="${id}">${requestIs4k(req) ? 'Retry 4K' : 'Retry request'}</button>`);
         });
 
+        const editable = getEditableRequests(data, false).concat(getEditableRequests(data, true));
+        const seenEdit = {};
+        editable.forEach(function (req) {
+            const id = requestIdOf(req);
+            if (!id || seenEdit[id]) {
+                return;
+            }
+            seenEdit[id] = true;
+            const fourK = requestIs4k(req);
+            parts.push(`<button type="button" class="bst-btn-trailer" data-action="change-request" data-request-id="${id}" data-is-4k="${fourK ? '1' : '0'}">${fourK ? 'Change 4K request' : 'Change request'}</button>`);
+        });
+
+        const info = data && (data.mediaInfo || data.media_info);
         const alreadyRequested = getRequestButtonState(data, false).requested
             || getRequestButtonState(data, true).requested
-            || (pendingRequestContext && pendingRequestContext.requestId);
-        if (canUnmonitor(mediaType) && alreadyRequested) {
-            parts.push(`<button type="button" class="bst-btn-trailer" data-action="unmonitor">${mediaType === 'tv' ? 'Unmonitor in Sonarr' : 'Unmonitor in Radarr'}</button>`);
+            || pendingContextIsActive(false)
+            || pendingContextIsActive(true);
+        if (canUnmonitor() && (alreadyRequested || info)) {
+            parts.push(`<button type="button" class="bst-btn-trailer" data-action="unmonitor">Unmonitor</button>`);
         }
 
         return parts.join('');
@@ -1007,21 +1058,24 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return null;
     }
 
-    function annotateRequestableSeasons(details) {
+    function annotateRequestableSeasons(details, options) {
         const requested = getRequestSeasons(details);
+        const allowRequested = !!(options && options.allowRequested);
         return getRequestableSeasons(details).map(function (season) {
             const status = getSeasonMediaStatus(details, season.seasonNumber);
             const isAvailable = status === 5;
             const isProcessing = status === 3;
             const isPending = status === 2;
             const wasRequested = requested.indexOf(season.seasonNumber) !== -1;
-            const requestable = status === 4 || (!isAvailable && !isProcessing && !isPending && !wasRequested);
+            const requestable = status === 4
+                || (!isAvailable && !isProcessing && !isPending && !wasRequested)
+                || (allowRequested && wasRequested && !isAvailable);
             let badge = '';
             if (isAvailable) {
                 badge = 'Available';
-            } else if (isProcessing) {
+            } else if (isProcessing && !allowRequested) {
                 badge = 'Processing';
-            } else if (isPending || (!requestable && wasRequested)) {
+            } else if ((isPending || wasRequested) && !requestable) {
                 badge = 'Requested';
             }
             return {
@@ -1031,6 +1085,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 posterPath: season.posterPath || season.poster_path || season.PosterPath || '',
                 requestable: requestable,
                 locked: !requestable,
+                preselected: allowRequested && wasRequested && requestable,
                 badge: badge
             };
         });
@@ -1067,6 +1122,51 @@ window.jellySeerrLog = window.jellySeerrLog || {
         window.alert(text);
     }
 
+    function readAjaxErrorMessage(err, fallback) {
+        const fallbackText = fallback || 'That action failed.';
+        if (err && err.responseJSON && (err.responseJSON.message || err.responseJSON.Message || err.responseJSON.error)) {
+            return Promise.resolve(String(err.responseJSON.message || err.responseJSON.Message || err.responseJSON.error));
+        }
+        if (err && typeof err.text === 'function') {
+            const reader = typeof err.clone === 'function' ? err.clone() : err;
+            return reader.text().then(function (text) {
+                try {
+                    const body = JSON.parse(text);
+                    return String(body.message || body.Message || body.error || text || fallbackText);
+                } catch (e) {
+                    return text || fallbackText;
+                }
+            }).catch(function () {
+                return fallbackText;
+            });
+        }
+        if (err && typeof err.message === 'string' && err.message && err.message !== 'Error') {
+            return Promise.resolve(err.message);
+        }
+        return Promise.resolve(fallbackText);
+    }
+
+    function unmonitorTitle(mediaType, mediaId, seasons) {
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellySeerr/servarr/unmonitor'),
+            type: 'POST',
+            data: JSON.stringify({
+                MediaType: mediaType,
+                MediaId: mediaId,
+                Seasons: Array.isArray(seasons) ? seasons : []
+            }),
+            contentType: 'application/json',
+            dataType: 'json'
+        });
+    }
+
+    function renderDetailsStatusNotice(data) {
+        if (getFailedRequests(data).length) {
+            return `<div class="bst-request-notice" data-request-notice="1" role="status">Seerr could not find any matching files yet.</div>`;
+        }
+        return '';
+    }
+
     function submitRequest(mediaId, mediaType, option, onSuccess, onError) {
         const payload = {
             MediaType: mediaType,
@@ -1088,9 +1188,12 @@ window.jellySeerrLog = window.jellySeerrLog || {
             payload.Seasons = option.seasons.slice().sort(function (a, b) { return a - b; });
         }
 
+        const requestId = option.requestId ? parseInt(option.requestId, 10) : 0;
+        const isUpdate = Number.isFinite(requestId) && requestId > 0;
+
         return ApiClient.ajax({
-            url: ApiClient.getUrl('JellySeerr/request'),
-            type: 'POST',
+            url: isUpdate ? ApiClient.getUrl('JellySeerr/request/' + requestId) : ApiClient.getUrl('JellySeerr/request'),
+            type: isUpdate ? 'PUT' : 'POST',
             data: JSON.stringify(payload),
             contentType: 'application/json; charset=utf-8',
             dataType: 'json'
@@ -1197,7 +1300,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 : '<span class="bst-season-poster bst-season-poster--empty" aria-hidden="true"></span>';
             const badgeHtml = season.badge ? `<span class="bst-season-badge">${escapeHtml(season.badge)}</span>` : '';
             const locked = season.locked || season.requestable === false;
-            const checked = locked && season.badge === 'Available' ? ' checked' : '';
+            const checked = (locked && season.badge === 'Available') || season.preselected ? ' checked' : '';
             const disabled = locked ? ' disabled' : '';
             return `
                 <label class="bst-season-option${locked ? ' is-locked' : ''}">
@@ -1280,7 +1383,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         syncSelectAll();
     }
 
-    function openSeasonModal(mediaId, mediaType, title, onSuccess, is4k) {
+    function openSeasonModal(mediaId, mediaType, title, onSuccess, is4k, requestId) {
         closeSeasonModal();
         is4k = !!is4k;
 
@@ -1297,7 +1400,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         continueBtn.addEventListener('click', function () {
             const seasons = ctx.selectedSeasons.slice();
             closeSeasonModal();
-            openQualityModal(mediaId, mediaType, title, onSuccess, is4k, seasons);
+            openQualityModal(mediaId, mediaType, title, onSuccess, is4k, seasons, requestId);
         });
 
         loadClientSettings().then(function () {
@@ -1334,13 +1437,19 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 return details;
             });
         }).then(function (details) {
-            const seasons = annotateRequestableSeasons(details || {});
+            const seasons = annotateRequestableSeasons(details || {}, { allowRequested: !!requestId });
 
             if (!seasons.length) {
                 list.innerHTML = `<div class="bst-quality-empty">No seasons available.</div>`;
                 continueBtn.disabled = true;
                 return;
             }
+
+            seasons.forEach(function (season) {
+                if (season.preselected) {
+                    ctx.selectedSeasons.push(season.seasonNumber);
+                }
+            });
 
             list.innerHTML = renderSeasonList(seasons);
             bindSeasonList(activeSeasonRoot, seasons, ctx);
@@ -1414,10 +1523,10 @@ window.jellySeerrLog = window.jellySeerrLog || {
         });
     }
 
-    function openQualityModal(mediaId, mediaType, title, onSuccess, is4k, selectedSeasons) {
+    function openQualityModal(mediaId, mediaType, title, onSuccess, is4k, selectedSeasons, requestId) {
         if (mediaType === 'tv' && selectedSeasons === undefined) {
             if (getRequestModalAdvanced().tvSeasonPickerEnabled !== false) {
-                openSeasonModal(mediaId, mediaType, title, onSuccess, is4k);
+                openSeasonModal(mediaId, mediaType, title, onSuccess, is4k, requestId);
                 return;
             }
             selectedSeasons = [];
@@ -1493,7 +1602,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 list.innerHTML = `<div class="bst-quality-loading">Submitting request…</div>`;
                 submitRequest(mediaId, mediaType, {
                     is4k: is4k,
-                    seasons: selectedSeasons
+                    seasons: selectedSeasons,
+                    requestId: requestId
                 }, finishRequest, failRequest).catch(function () {});
                 return;
             }
@@ -1519,7 +1629,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     profileId: parseInt(btn.getAttribute('data-profile-id'), 10),
                     rootFolder: btn.getAttribute('data-root-folder') || null,
                     is4k: btn.getAttribute('data-is-4k') === '1',
-                    seasons: selectedSeasons
+                    seasons: selectedSeasons,
+                    requestId: requestId
                 }, finishRequest, failRequest).catch(function () {
                     btn.disabled = false;
                 });
@@ -1651,12 +1762,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                 ${browseUrl && tmdbId
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="open-seerr">Open in Seerr</button>`
                                                     : ''}
-                                                ${requestState.requested
+                                                ${data.mediaInfo || data.media_info || requestState.requested
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="issue">Report issue</button>`
                                                     : ''}
                                                 ${renderRequestLifecycleButtons(data, mediaType)}
                                             </div>
                                         </div>
+                                        ${renderDetailsStatusNotice(data)}
                                         <div class="bst-details-layout">
                                             <div class="bst-details-main">
                                                 <p class="bst-overview">${escapeHtml(overview)}</p>
@@ -1721,7 +1833,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
             requestBtn.addEventListener('click', function (event) {
                 event.preventDefault();
                 event.stopPropagation();
-                openQualityModal(mediaId, mediaType, title);
+                openQualityModal(mediaId, mediaType, title, function () {
+                    return reloadDetailsModal(mediaId, mediaType);
+                });
             });
         }
 
@@ -1730,7 +1844,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
             request4kBtn.addEventListener('click', function (event) {
                 event.preventDefault();
                 event.stopPropagation();
-                openQualityModal(mediaId, mediaType, title, undefined, true);
+                openQualityModal(mediaId, mediaType, title, function () {
+                    return reloadDetailsModal(mediaId, mediaType);
+                }, true);
             });
         }
 
@@ -1791,6 +1907,21 @@ window.jellySeerrLog = window.jellySeerrLog || {
             });
         }
 
+        root.querySelectorAll('[data-action="change-request"]').forEach(function (btn) {
+            btn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                const requestId = btn.getAttribute('data-request-id');
+                if (!requestId) {
+                    return;
+                }
+                const is4k = btn.getAttribute('data-is-4k') === '1';
+                openQualityModal(mediaId, mediaType, title, function () {
+                    return reloadDetailsModal(mediaId, mediaType);
+                }, is4k, undefined, requestId);
+            });
+        });
+
         root.querySelectorAll('[data-action="cancel-request"], [data-action="approve-request"], [data-action="decline-request"], [data-action="retry-request"]').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 const action = btn.getAttribute('data-action');
@@ -1798,7 +1929,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 if (!requestId) {
                     return;
                 }
-                if (action === 'cancel-request' && shouldConfirmCancel() && !window.confirm('Cancel this request?')) {
+                if (action === 'cancel-request' && shouldConfirmCancel() && !window.confirm('Cancel this request? Monitoring in Radarr/Sonarr will also be stopped.')) {
                     return;
                 }
                 let url;
@@ -1818,17 +1949,32 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 }
                 btn.disabled = true;
                 ApiClient.ajax({ url: url, type: method }).then(function () {
+                    if (action === 'cancel-request') {
+                        pendingRequestContext = null;
+                        const seasons = getRequestSeasons(data);
+                        return unmonitorTitle(mediaType, mediaId, seasons).then(function (result) {
+                            return (result && (result.message || result.Message)) || 'Request cancelled and monitoring stopped.';
+                        }).catch(function (unmonitorErr) {
+                            return readAjaxErrorMessage(unmonitorErr, '').then(function (msg) {
+                                return msg
+                                    ? 'Request cancelled. Could not unmonitor: ' + msg
+                                    : 'Request cancelled.';
+                            });
+                        });
+                    }
                     if (pendingRequestContext) {
-                        if (action === 'cancel-request' || action === 'approve-request' || action === 'decline-request') {
+                        if (action === 'approve-request' || action === 'decline-request') {
                             pendingRequestContext.isPending = false;
-                            pendingRequestContext.requestStatus = action === 'cancel-request' ? 3 : pendingRequestContext.requestStatus;
                         }
                         if (action === 'retry-request') {
                             pendingRequestContext.isFailed = false;
                         }
                     }
-                    notifyUser(action === 'cancel-request' ? 'Request cancelled' : 'Updated request');
-                    return reloadDetailsModal(mediaId, mediaType);
+                    return 'Updated request';
+                }).then(function (message) {
+                    return reloadDetailsModal(mediaId, mediaType).then(function () {
+                        notifyUser(message || 'Updated request');
+                    });
                 }).catch(function (err) {
                     log.error('request action failed', err);
                     btn.disabled = false;
@@ -1837,7 +1983,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                         notifyUser('Seerr could not cancel this request. If it is already approved, use Unmonitor instead.');
                         return;
                     }
-                    notifyUser('That request action failed.');
+                    return readAjaxErrorMessage(err, 'That request action failed.').then(notifyUser);
                 });
             });
         });
@@ -1845,22 +1991,12 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const unmonitorBtn = root.querySelector('[data-action="unmonitor"]');
         if (unmonitorBtn) {
             unmonitorBtn.addEventListener('click', function () {
-                const serviceName = mediaType === 'tv' ? 'Sonarr' : 'Radarr';
-                if (!window.confirm('Stop monitoring this title in ' + serviceName + '? Existing files stay on disk.')) {
+                if (!window.confirm('Stop monitoring this title in Radarr/Sonarr? Existing files stay on disk.')) {
                     return;
                 }
                 unmonitorBtn.disabled = true;
-                ApiClient.ajax({
-                    url: ApiClient.getUrl('JellySeerr/servarr/unmonitor'),
-                    type: 'POST',
-                    data: JSON.stringify({
-                        MediaType: mediaType,
-                        MediaId: mediaId,
-                        Seasons: getRequestSeasons(data)
-                    }),
-                    contentType: 'application/json'
-                }).then(function (result) {
-                    notifyUser((result && (result.message || result.Message)) || ('Unmonitored in ' + serviceName));
+                unmonitorTitle(mediaType, mediaId, getRequestSeasons(data)).then(function (result) {
+                    notifyUser((result && (result.message || result.Message)) || 'Unmonitored');
                     if (typeof window.__jellySeerrRequestsEnsureMounted === 'function') {
                         window.__jellySeerrRequestsEnsureMounted({ tabShown: true });
                     }
@@ -1868,7 +2004,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 }).catch(function (err) {
                     log.error('unmonitor failed', err);
                     unmonitorBtn.disabled = false;
-                    notifyUser('Could not unmonitor this title in ' + serviceName + '.');
+                    return readAjaxErrorMessage(err, 'Could not unmonitor this title in Radarr/Sonarr.').then(notifyUser);
                 });
             });
         }

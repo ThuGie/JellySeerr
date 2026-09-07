@@ -138,22 +138,18 @@ public class RequestListService
             foreach (JObject mapped in mappedRequests.OfType<JObject>())
             {
                 string? mediaLabel = mapped.Value<string>("mediaStatusLabel");
-                string? servarrStatusKey = (mapped["servarrProgress"] as JObject)?.Value<string>("statusKey");
 
                 if (string.Equals(mediaLabel, "Failed", StringComparison.OrdinalIgnoreCase))
                 {
+                    JObject? existingProgress = mapped["servarrProgress"] as JObject;
                     mapped["servarrProgress"] = new JObject
                     {
                         ["statusKey"] = "failed",
                         ["statusLabel"] = "Failed to find content",
                         ["percent"] = 100,
-                        ["isActive"] = false
+                        ["isActive"] = false,
+                        ["openUrl"] = existingProgress?["openUrl"]
                     };
-                }
-                else if (string.Equals(servarrStatusKey, "missing-monitored", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Unsure state (don't show a bar). Maybe show a gray bar?
-                    mapped.Remove("servarrProgress");
                 }
 
                 mapped.Remove("externalServiceId");
