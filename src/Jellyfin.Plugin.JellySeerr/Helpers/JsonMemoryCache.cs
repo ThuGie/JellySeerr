@@ -69,5 +69,16 @@ public static class JsonMemoryCache
         Store[key] = new Entry(value, DateTime.UtcNow.Add(ttl));
     }
 
+    public static void RemoveByPrefix(string prefix)
+    {
+        foreach (string key in Store.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                Store.TryRemove(key, out _);
+            }
+        }
+    }
+
     private sealed record Entry(object Value, DateTime ExpiresAt);
 }

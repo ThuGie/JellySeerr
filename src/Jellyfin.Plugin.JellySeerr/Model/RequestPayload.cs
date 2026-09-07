@@ -52,3 +52,15 @@ public class BulkCancelPayload
     [JsonPropertyName("Ids")]
     public List<int> Ids { get; set; } = new();
 }
+
+public class UnmonitorPayload
+{
+    [JsonPropertyName("MediaType")]
+    public string MediaType { get; set; } = string.Empty;
+
+    [JsonPropertyName("MediaId")]
+    public int MediaId { get; set; }
+
+    [JsonPropertyName("Seasons")]
+    public List<int>? Seasons { get; set; }
+}

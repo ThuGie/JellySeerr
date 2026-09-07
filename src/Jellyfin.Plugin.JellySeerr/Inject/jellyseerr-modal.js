@@ -31,6 +31,56 @@ window.jellySeerrLog = window.jellySeerrLog || {
     let activeQualityRoot = null;
     let escapeHandler = null;
     let pendingRequestContext = null;
+    let clientSettingsCache = {};
+    let quotaCache = { at: 0, data: null };
+
+    function formatQuotaPart(entry, label) {
+        if (!entry) {
+            return '';
+        }
+        const limit = Number(entry.limit ?? entry.Limit ?? entry.quotaLimit ?? entry.QuotaLimit ?? entry.quota ?? entry.Quota);
+        if (!Number.isFinite(limit) || limit <= 0) {
+            return '';
+        }
+        const used = Number(entry.used ?? entry.Used ?? entry.quotaUsed ?? entry.QuotaUsed ?? 0);
+        const remainingRaw = entry.remaining ?? entry.Remaining;
+        const left = Number.isFinite(Number(remainingRaw)) ? Number(remainingRaw) : Math.max(0, limit - (Number.isFinite(used) ? used : 0));
+        return left + ' of ' + limit + ' ' + label + ' left';
+    }
+
+    function formatQuotaSummary(data, mediaType) {
+        if (!data) {
+            return '';
+        }
+        if (mediaType === 'movie') {
+            return formatQuotaPart(data.movie || data.Movie, 'movies');
+        }
+        if (mediaType === 'tv') {
+            return formatQuotaPart(data.tv || data.Tv || data.TV, 'TV');
+        }
+        return [formatQuotaPart(data.movie || data.Movie, 'movies'), formatQuotaPart(data.tv || data.Tv || data.TV, 'TV')]
+            .filter(Boolean)
+            .join(' · ');
+    }
+
+    window.jellySeerrQuota = {
+        fetch: function () {
+            if (quotaCache.data && Date.now() - quotaCache.at < 30000) {
+                return Promise.resolve(quotaCache.data);
+            }
+            return ApiClient.ajax({
+                url: ApiClient.getUrl('JellySeerr/quota'),
+                type: 'GET',
+                dataType: 'json'
+            }).then(function (data) {
+                quotaCache = { at: Date.now(), data: data };
+                return data;
+            }).catch(function () {
+                return null;
+            });
+        },
+        formatSummary: formatQuotaSummary
+    };
 
     function escapeHtml(text) {
         const div = document.createElement('div');
@@ -83,7 +133,6 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     const PLUGIN_ID = '8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44';
-    let clientSettingsCache = {};
 
     function getLogoImageUrl(data) {
         const rawPath = data && (data.logoPath || data.logo_path);
@@ -171,6 +220,49 @@ window.jellySeerrLog = window.jellySeerrLog || {
         });
     }
 
+    function mapRelatedList(raw) {
+        const results = raw && (raw.results || raw.Results || raw);
+        if (!Array.isArray(results)) {
+            return [];
+        }
+        return results.map(function (item) {
+            if (!item) {
+                return null;
+            }
+            const id = item.id || item.Id;
+            if (!id) {
+                return null;
+            }
+            return {
+                id: id,
+                title: item.title || item.name || item.Title || item.Name || 'Title',
+                mediaType: item.media_type || item.mediaType || item.MediaType || (item.first_air_date || item.firstAirDate ? 'tv' : 'movie'),
+                posterPath: item.poster_path || item.posterPath || item.PosterPath || ''
+            };
+        }).filter(Boolean);
+    }
+
+    function mapTmdbSeasons(rawSeasons) {
+        if (!Array.isArray(rawSeasons)) {
+            return [];
+        }
+        return rawSeasons.map(function (season) {
+            if (!season) {
+                return null;
+            }
+            const seasonNumber = season.seasonNumber != null ? season.seasonNumber : (season.season_number != null ? season.season_number : season.SeasonNumber);
+            if (!Number.isFinite(Number(seasonNumber))) {
+                return null;
+            }
+            return {
+                seasonNumber: Number(seasonNumber),
+                name: season.name || season.Name || '',
+                episodeCount: season.episodeCount != null ? season.episodeCount : (season.episode_count != null ? season.episode_count : season.EpisodeCount),
+                posterPath: season.posterPath || season.poster_path || season.PosterPath || ''
+            };
+        }).filter(Boolean);
+    }
+
     function mapMovieDetails(raw) {
         const details = {
             id: raw.id,
@@ -187,7 +279,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
             adult: raw.adult,
             genres: raw.genres || [],
             credits: raw.credits || {},
-            releaseDates: raw.release_dates || {}
+            releaseDates: raw.release_dates || {},
+            similar: mapRelatedList(raw.similar),
+            recommendations: mapRelatedList(raw.recommendations)
         };
 
         if (raw.videos && raw.videos.results) {
@@ -216,7 +310,10 @@ window.jellySeerrLog = window.jellySeerrLog || {
             originalLanguage: raw.original_language,
             genres: raw.genres || [],
             credits: raw.credits || {},
-            contentRatings: raw.content_ratings || {}
+            contentRatings: raw.content_ratings || {},
+            seasons: mapTmdbSeasons(raw.seasons),
+            similar: mapRelatedList(raw.similar),
+            recommendations: mapRelatedList(raw.recommendations)
         };
 
         if (raw.videos && raw.videos.results) {
@@ -272,8 +369,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const isTv = mediaType === 'tv';
         const segment = isTv ? 'tv' : 'movie';
         const append = isTv
-            ? 'videos,credits,content_ratings,external_ids'
-            : 'videos,credits,release_dates,external_ids';
+            ? 'videos,credits,content_ratings,external_ids,similar,recommendations'
+            : 'videos,credits,release_dates,external_ids,similar,recommendations';
         let detailsUrl = 'https://api.themoviedb.org/3/' + segment + '/' + mediaId;
         detailsUrl = appendTmdbQuery(detailsUrl, 'append_to_response', append);
 
@@ -315,6 +412,41 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 tmdbDetails[key] = jellyseerrDetails[key];
             }
         });
+
+        ['similar', 'recommendations', 'Similar', 'Recommendations'].forEach(function (key) {
+            const mapped = mapRelatedList(jellyseerrDetails[key]);
+            const targetKey = key.toLowerCase();
+            if (mapped.length && (!tmdbDetails[targetKey] || !tmdbDetails[targetKey].length)) {
+                tmdbDetails[targetKey] = mapped;
+            }
+        });
+
+        const seerrSeasons = mapTmdbSeasons(jellyseerrDetails.seasons || jellyseerrDetails.Seasons);
+        if (seerrSeasons.length) {
+            const byNumber = {};
+            (tmdbDetails.seasons || []).forEach(function (season) {
+                byNumber[season.seasonNumber] = season;
+            });
+            seerrSeasons.forEach(function (season) {
+                const existing = byNumber[season.seasonNumber];
+                if (existing) {
+                    if (!existing.posterPath && season.posterPath) {
+                        existing.posterPath = season.posterPath;
+                    }
+                    if (!existing.episodeCount && season.episodeCount) {
+                        existing.episodeCount = season.episodeCount;
+                    }
+                    if (!existing.name && season.name) {
+                        existing.name = season.name;
+                    }
+                } else {
+                    byNumber[season.seasonNumber] = season;
+                }
+            });
+            tmdbDetails.seasons = Object.keys(byNumber).map(function (key) {
+                return byNumber[key];
+            });
+        }
 
         return tmdbDetails;
     }
@@ -363,7 +495,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
         // Some seasons/eps are present (more seasons should still be able to be requested)
         if (status === 4) {
-            return { requested: false, label: defaultLabel };
+            return { requested: false, label: is4k ? defaultLabel : 'Request seasons' };
         }
 
         const labels = {
@@ -389,7 +521,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function getRequestRecords(data) {
         const info = (data && (data.mediaInfo || data.media_info)) || {};
-        const list = info.requests || info.Requests || [];
+        const list = info.requests || info.Requests || (data && (data.requests || data.Requests)) || [];
         return Array.isArray(list) ? list : [];
     }
 
@@ -406,37 +538,133 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function getPendingRequests(data) {
+        return getRequestsByStatus(data, [1], function () {
+            return pendingRequestContext && pendingRequestContext.isPending;
+        });
+    }
+
+    function getCancellableRequests(data) {
+        return getRequestsByStatus(data, [1, 2], function () {
+            if (!pendingRequestContext || !pendingRequestContext.requestId) {
+                return false;
+            }
+            if (pendingRequestContext.isPending) {
+                return true;
+            }
+            if (pendingRequestContext.isFailed) {
+                return false;
+            }
+            const status = Number(pendingRequestContext.requestStatus);
+            return !Number.isFinite(status) || status === 1 || status === 2;
+        });
+    }
+
+    function getFailedRequests(data) {
+        return getRequestsByStatus(data, [4], function () {
+            return pendingRequestContext && pendingRequestContext.isFailed;
+        });
+    }
+
+    function getRequestsByStatus(data, statuses, useContext) {
         const fromSeerr = getRequestRecords(data).filter(function (req) {
-            return requestStatusOf(req) === 1 && requestIdOf(req);
+            return statuses.indexOf(requestStatusOf(req)) !== -1 && requestIdOf(req);
         });
         if (fromSeerr.length) {
             return fromSeerr;
         }
-        if (pendingRequestContext && pendingRequestContext.isPending && pendingRequestContext.requestId) {
+        if (pendingRequestContext && pendingRequestContext.requestId && useContext()) {
+            const status = Number(pendingRequestContext.requestStatus);
             return [{
                 id: pendingRequestContext.requestId,
-                status: 1,
+                status: Number.isFinite(status) ? status : statuses[0],
                 is4k: pendingRequestContext.is4k === true
             }];
         }
         return [];
     }
 
-    function getFailedRequests(data) {
-        const fromSeerr = getRequestRecords(data).filter(function (req) {
-            return requestStatusOf(req) === 4 && requestIdOf(req);
+    function getRequestSeasons(data) {
+        const seasons = [];
+        function addSeason(n) {
+            if (Number.isFinite(n) && seasons.indexOf(n) === -1) {
+                seasons.push(n);
+            }
+        }
+        getRequestRecords(data).forEach(function (req) {
+            const list = req.seasons || req.Seasons || [];
+            list.forEach(function (entry) {
+                addSeason(typeof entry === 'number' ? entry : (entry && (entry.seasonNumber != null ? entry.seasonNumber : entry.SeasonNumber)));
+            });
         });
-        if (fromSeerr.length) {
-            return fromSeerr;
+        if (!seasons.length && pendingRequestContext && Array.isArray(pendingRequestContext.seasons)) {
+            pendingRequestContext.seasons.forEach(addSeason);
         }
-        if (pendingRequestContext && pendingRequestContext.isFailed && pendingRequestContext.requestId) {
-            return [{
-                id: pendingRequestContext.requestId,
-                status: 4,
-                is4k: pendingRequestContext.is4k === true
-            }];
+        return seasons;
+    }
+
+    function canOpenLocalServices() {
+        return pickVal(clientSettingsCache, 'canOpenLocalServices', 'CanOpenLocalServices') === true;
+    }
+
+    function getJellyseerrBrowseUrl() {
+        if (!canOpenLocalServices()) {
+            return '';
         }
-        return [];
+        return String(pickVal(clientSettingsCache, 'jellyseerrBrowseUrl', 'JellyseerrBrowseUrl') || '').replace(/\/+$/, '');
+    }
+
+    function shouldShowQuotaWarnings() {
+        return pickVal(clientSettingsCache, 'showQuotaWarnings', 'ShowQuotaWarnings') !== false;
+    }
+
+    function lookupJellyfinPlayItem(tmdbId, mediaType) {
+        if (!tmdbId || typeof ApiClient === 'undefined' || typeof ApiClient.getItems !== 'function') {
+            return Promise.resolve(null);
+        }
+        const userId = ApiClient.getCurrentUserId && ApiClient.getCurrentUserId();
+        if (!userId) {
+            return Promise.resolve(null);
+        }
+        return ApiClient.getItems(userId, {
+            Recursive: true,
+            Limit: 1,
+            IncludeItemTypes: mediaType === 'tv' ? 'Series' : 'Movie',
+            AnyProviderIdEquals: 'Tmdb.' + tmdbId
+        }).then(function (result) {
+            const items = (result && (result.Items || result.items)) || [];
+            return items[0] || null;
+        }).catch(function () {
+            return null;
+        });
+    }
+
+    function navigateToJellyfinItem(item) {
+        if (!item) {
+            return;
+        }
+        const id = item.Id || item.id;
+        if (window.AppRouter && typeof AppRouter.showItem === 'function') {
+            AppRouter.showItem(item);
+            return;
+        }
+        if (window.Dashboard && typeof Dashboard.navigate === 'function' && id) {
+            Dashboard.navigate('details?id=' + encodeURIComponent(id));
+        }
+    }
+
+    function openJellyseerrManage(tmdbId, mediaType) {
+        const base = getJellyseerrBrowseUrl();
+        if (!base || !tmdbId) {
+            return;
+        }
+        const segment = mediaType === 'tv' ? 'tv' : 'movie';
+        window.open(base + '/' + segment + '/' + tmdbId + '?manage=1', '_blank', 'noopener,noreferrer');
+    }
+
+    function canUnmonitor(mediaType) {
+        return mediaType === 'tv'
+            ? !!(pickVal(clientSettingsCache, 'sonarrConfigured', 'SonarrConfigured') || pickVal(clientSettingsCache, 'sonarrUrl', 'SonarrUrl'))
+            : !!(pickVal(clientSettingsCache, 'radarrConfigured', 'RadarrConfigured') || pickVal(clientSettingsCache, 'radarrUrl', 'RadarrUrl'));
     }
 
     function isOnWatchlist(data) {
@@ -462,16 +690,22 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return pickVal(clientSettingsCache, 'confirmCancel', 'ConfirmCancel') !== false;
     }
 
-    function renderRequestLifecycleButtons(data) {
+    function renderRequestLifecycleButtons(data, mediaType) {
         const pending = getPendingRequests(data);
+        const cancellable = getCancellableRequests(data);
         const failed = getFailedRequests(data);
         const manage = canManageRequests();
         const parts = [];
 
-        pending.forEach(function (req) {
+        cancellable.forEach(function (req) {
             const id = requestIdOf(req);
             const fourK = requestIs4k(req);
             parts.push(`<button type="button" class="bst-btn-danger" data-action="cancel-request" data-request-id="${id}">${fourK ? 'Cancel 4K request' : 'Cancel request'}</button>`);
+        });
+
+        pending.forEach(function (req) {
+            const id = requestIdOf(req);
+            const fourK = requestIs4k(req);
             if (manage) {
                 parts.push(`<button type="button" class="bst-btn-success" data-action="approve-request" data-request-id="${id}">${fourK ? 'Approve 4K' : 'Approve'}</button>`);
                 parts.push(`<button type="button" class="bst-btn-trailer" data-action="decline-request" data-request-id="${id}">${fourK ? 'Decline 4K' : 'Decline'}</button>`);
@@ -482,6 +716,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
             const id = requestIdOf(req);
             parts.push(`<button type="button" class="bst-btn-trailer" data-action="retry-request" data-request-id="${id}">${requestIs4k(req) ? 'Retry 4K' : 'Retry request'}</button>`);
         });
+
+        const alreadyRequested = getRequestButtonState(data, false).requested
+            || getRequestButtonState(data, true).requested
+            || (pendingRequestContext && pendingRequestContext.requestId);
+        if (canUnmonitor(mediaType) && alreadyRequested) {
+            parts.push(`<button type="button" class="bst-btn-trailer" data-action="unmonitor">${mediaType === 'tv' ? 'Unmonitor in Sonarr' : 'Unmonitor in Radarr'}</button>`);
+        }
 
         return parts.join('');
     }
@@ -570,7 +811,14 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }).catch(function (err) {
             log.warn('client settings fetch failed. falling back to plugin config', err);
             return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
-                clientSettingsCache = config || {};
+                clientSettingsCache = {
+                    tmdbApiKey: (config && (config.TmdbApiKey || config.tmdbApiKey)) || '',
+                    canOpenLocalServices: false,
+                    jellyseerrBrowseUrl: '',
+                    radarrUrl: '',
+                    sonarrUrl: '',
+                    showQuotaWarnings: !config || (config.ShowQuotaWarnings !== false && config.showQuotaWarnings !== false)
+                };
                 return clientSettingsCache;
             }).catch(function (configErr) {
                 log.warn('plugin config fetch failed', configErr);
@@ -731,7 +979,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function getRequestableSeasons(details) {
         const includeSpecials = getRequestModalAdvanced().includeSpecialsSeason === true;
-        return (details.seasons || [])
+        return mapTmdbSeasons(details && (details.seasons || details.Seasons))
             .filter(function (season) {
                 if (season.episodeCount === 0) {
                     return false;
@@ -744,6 +992,48 @@ window.jellySeerrLog = window.jellySeerrLog || {
             .sort(function (a, b) {
                 return a.seasonNumber - b.seasonNumber;
             });
+    }
+
+    function getSeasonMediaStatus(details, seasonNumber) {
+        const info = (details && (details.mediaInfo || details.media_info)) || {};
+        const list = info.seasons || info.Seasons || [];
+        for (let i = 0; i < list.length; i++) {
+            const entry = list[i];
+            const num = entry && (entry.seasonNumber != null ? entry.seasonNumber : entry.SeasonNumber);
+            if (Number(num) === seasonNumber) {
+                return normalizeMediaStatus(entry.status != null ? entry.status : entry.Status);
+            }
+        }
+        return null;
+    }
+
+    function annotateRequestableSeasons(details) {
+        const requested = getRequestSeasons(details);
+        return getRequestableSeasons(details).map(function (season) {
+            const status = getSeasonMediaStatus(details, season.seasonNumber);
+            const isAvailable = status === 5;
+            const isProcessing = status === 3;
+            const isPending = status === 2;
+            const wasRequested = requested.indexOf(season.seasonNumber) !== -1;
+            const requestable = status === 4 || (!isAvailable && !isProcessing && !isPending && !wasRequested);
+            let badge = '';
+            if (isAvailable) {
+                badge = 'Available';
+            } else if (isProcessing) {
+                badge = 'Processing';
+            } else if (isPending || (!requestable && wasRequested)) {
+                badge = 'Requested';
+            }
+            return {
+                seasonNumber: season.seasonNumber,
+                name: season.name || season.Name || '',
+                episodeCount: season.episodeCount != null ? season.episodeCount : season.episode_count,
+                posterPath: season.posterPath || season.poster_path || season.PosterPath || '',
+                requestable: requestable,
+                locked: !requestable,
+                badge: badge
+            };
+        });
     }
 
     function notifyUser(message) {
@@ -901,10 +1191,20 @@ window.jellySeerrLog = window.jellySeerrLog || {
             const episodesHtml = season.episodeCount
                 ? `<span class="bst-season-episodes"> (${season.episodeCount}${season.episodeCount === 1 ? ' episode' : ' episodes'})</span>`
                 : '';
+            const posterSrc = season.posterPath ? tmdbImage(season.posterPath, 'w92') : '';
+            const posterHtml = posterSrc
+                ? `<img class="bst-season-poster" src="${escapeHtml(posterSrc)}" alt="" />`
+                : '<span class="bst-season-poster bst-season-poster--empty" aria-hidden="true"></span>';
+            const badgeHtml = season.badge ? `<span class="bst-season-badge">${escapeHtml(season.badge)}</span>` : '';
+            const locked = season.locked || season.requestable === false;
+            const checked = locked && season.badge === 'Available' ? ' checked' : '';
+            const disabled = locked ? ' disabled' : '';
             return `
-                <label class="bst-season-option">
-                    <input type="checkbox" class="bst-season-checkbox bst-season-row-input" value="${seasonNumber}" />
+                <label class="bst-season-option${locked ? ' is-locked' : ''}">
+                    ${posterHtml}
+                    <input type="checkbox" class="bst-season-checkbox bst-season-row-input" value="${seasonNumber}" data-requestable="${locked ? '0' : '1'}"${checked}${disabled} />
                     <span class="bst-season-label">${displayName}${episodesHtml}</span>
+                    ${badgeHtml}
                 </label>`;
         }).join('');
 
@@ -920,19 +1220,21 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const list = root.querySelector('.bst-quality-list');
         const continueBtn = root.querySelector('.bst-quality-continue');
         const selectedSeasons = ctx.selectedSeasons;
+        const requestable = seasons.filter(function (s) { return s.requestable !== false; });
 
         function syncSelectAll() {
-            const seasonNumbers = seasons.map(function (s) { return s.seasonNumber; });
+            const seasonNumbers = requestable.map(function (s) { return s.seasonNumber; });
             const selectAllInput = list.querySelector('[data-select-all-seasons]');
             if (!selectAllInput) {
                 return;
             }
-            selectAllInput.checked = seasonNumbers.every(function (num) {
+            selectAllInput.checked = seasonNumbers.length > 0 && seasonNumbers.every(function (num) {
                 return selectedSeasons.indexOf(num) !== -1;
             });
             selectAllInput.indeterminate = selectedSeasons.length > 0 && !selectAllInput.checked;
+            selectAllInput.disabled = seasonNumbers.length === 0;
             const requireExplicit = getRequestModalAdvanced().requireExplicitSeasonSelection === true;
-            continueBtn.disabled = requireExplicit && selectedSeasons.length === 0;
+            continueBtn.disabled = (requireExplicit && selectedSeasons.length === 0) || requestable.length === 0;
         }
 
         list.addEventListener('change', function (event) {
@@ -940,13 +1242,16 @@ window.jellySeerrLog = window.jellySeerrLog || {
             if (selectAllInput) {
                 if (selectAllInput.checked) {
                     ctx.selectedSeasons.length = 0;
-                    seasons.forEach(function (s) {
+                    requestable.forEach(function (s) {
                         ctx.selectedSeasons.push(s.seasonNumber);
                     });
                 } else {
                     ctx.selectedSeasons.length = 0;
                 }
                 list.querySelectorAll('.bst-season-row-input').forEach(function (input) {
+                    if (input.disabled) {
+                        return;
+                    }
                     input.checked = ctx.selectedSeasons.indexOf(parseInt(input.value, 10)) !== -1;
                 });
                 syncSelectAll();
@@ -954,7 +1259,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
             }
 
             const rowInput = event.target.closest('.bst-season-row-input');
-            if (!rowInput) {
+            if (!rowInput || rowInput.disabled) {
                 return;
             }
 
@@ -995,8 +1300,41 @@ window.jellySeerrLog = window.jellySeerrLog || {
             openQualityModal(mediaId, mediaType, title, onSuccess, is4k, seasons);
         });
 
-        fetchJellyseerrDetails(mediaId, mediaType).then(function (details) {
-            const seasons = getRequestableSeasons(details);
+        loadClientSettings().then(function () {
+            return fetchJellyseerrDetails(mediaId, mediaType);
+        }).then(function (details) {
+            details = details || {};
+            const apiKey = getTmdbApiKey(clientSettingsCache);
+            if (!apiKey) {
+                return details;
+            }
+            return fetchTmdbJson('https://api.themoviedb.org/3/tv/' + mediaId, apiKey).then(function (raw) {
+                const tmdbSeasons = mapTmdbSeasons(raw && raw.seasons);
+                if (!tmdbSeasons.length) {
+                    return details;
+                }
+                const byNumber = {};
+                tmdbSeasons.forEach(function (season) {
+                    byNumber[season.seasonNumber] = season;
+                });
+                mapTmdbSeasons(details.seasons || details.Seasons).forEach(function (season) {
+                    const existing = byNumber[season.seasonNumber] || {};
+                    byNumber[season.seasonNumber] = {
+                        seasonNumber: season.seasonNumber,
+                        name: season.name || existing.name,
+                        episodeCount: season.episodeCount != null ? season.episodeCount : existing.episodeCount,
+                        posterPath: season.posterPath || existing.posterPath
+                    };
+                });
+                details.seasons = Object.keys(byNumber).map(function (key) {
+                    return byNumber[key];
+                });
+                return details;
+            }).catch(function () {
+                return details;
+            });
+        }).then(function (details) {
+            const seasons = annotateRequestableSeasons(details || {});
 
             if (!seasons.length) {
                 list.innerHTML = `<div class="bst-quality-empty">No seasons available.</div>`;
@@ -1024,6 +1362,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                         <button type="button" class="bst-quality-close" aria-label="Close">${CLOSE_ICON}</button>
                     </div>
                     <div class="bst-quality-list"><div class="bst-quality-loading">Loading profiles…</div></div>
+                    <div class="bst-quality-quota" hidden></div>
                 </div>
             </div>`;
     }
@@ -1053,6 +1392,28 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }).join('');
     }
 
+    function fillQualityQuota(root, mediaType) {
+        const el = root && root.querySelector('.bst-quality-quota');
+        if (!el) {
+            return;
+        }
+        loadClientSettings().then(function () {
+            if (!shouldShowQuotaWarnings()) {
+                return null;
+            }
+            return window.jellySeerrQuota.fetch();
+        }).then(function (data) {
+            if (!el.isConnected) {
+                return;
+            }
+            const text = formatQuotaSummary(data, mediaType);
+            el.textContent = text;
+            el.hidden = !text;
+        }).catch(function () {
+            el.hidden = true;
+        });
+    }
+
     function openQualityModal(mediaId, mediaType, title, onSuccess, is4k, selectedSeasons) {
         if (mediaType === 'tv' && selectedSeasons === undefined) {
             if (getRequestModalAdvanced().tvSeasonPickerEnabled !== false) {
@@ -1072,6 +1433,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const list = activeQualityRoot.querySelector('.bst-quality-list');
         activeQualityRoot.querySelector('.bst-quality-backdrop').addEventListener('click', closeQualityModal);
         activeQualityRoot.querySelector('.bst-quality-close').addEventListener('click', closeQualityModal);
+        fillQualityQuota(activeQualityRoot, mediaType);
 
         function finishRequest() {
             closeQualityModal();
@@ -1194,7 +1556,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function renderRelatedRow(list, heading) {
-        const items = (list && (list.results || list.Results || list)) || [];
+        const items = Array.isArray(list) ? list : ((list && (list.results || list.Results)) || []);
         if (!Array.isArray(items) || !items.length) {
             return '';
         }
@@ -1205,12 +1567,20 @@ window.jellySeerrLog = window.jellySeerrLog || {
             if (!id) {
                 return '';
             }
-            return `<button type="button" class="bst-genre-pill" data-related-id="${id}" data-related-type="${type}">${name}</button>`;
+            const posterPath = item.posterPath || item.poster_path || '';
+            const posterSrc = posterPath ? tmdbImage(posterPath, 'w185') : '';
+            const posterHtml = posterSrc
+                ? `<img src="${escapeHtml(posterSrc)}" alt="" />`
+                : `<span class="bst-related-poster-empty" aria-hidden="true"></span>`;
+            return `<button type="button" class="bst-related-card" data-related-id="${id}" data-related-type="${type}">
+                <span class="bst-related-poster">${posterHtml}</span>
+                <span class="bst-related-name">${name}</span>
+            </button>`;
         }).join('');
         if (!cards) {
             return '';
         }
-        return `<div class="bst-cast-section"><h3 class="bst-hero-title-fallback" style="font-size:1.1em;margin:0 0 .5em">${escapeHtml(heading)}</h3><div class="bst-genres">${cards}</div></div>`;
+        return `<div class="bst-related-section"><h3 class="bst-related-heading">${escapeHtml(heading)}</h3><div class="bst-related-scroll">${cards}</div></div>`;
     }
 
     function renderDetails(data, mediaId, mediaType) {
@@ -1234,6 +1604,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const logoUrl = getLogoImageUrl(data);
         const requestState = getRequestButtonState(data, false);
         const request4kState = getRequestButtonState(data, true);
+        const posterPath = data.posterPath || data.poster_path;
+        const posterUrl = posterPath ? tmdbImage(posterPath, 'w342') : '';
+        const browseUrl = getJellyseerrBrowseUrl();
 
         return `
             <div class="bst-popout-wrapper">
@@ -1246,7 +1619,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                 <div class="bst-modal-layout">
                                     <div class="bst-hero">
                                         ${backdrop ? `<div class="bst-hero-backdrop" style="background-image: url(&quot;${backdrop}&quot;)"></div>` : ''}
-                                        <div class="bst-hero-title-wrap">
+                                        ${posterUrl ? `<img class="bst-hero-poster" alt="" src="${escapeHtml(posterUrl)}" />` : ''}
+                                        <div class="bst-hero-title-wrap${posterUrl ? ' has-poster' : ''}">
                                             ${logoUrl
                                                 ? `<img class="bst-hero-logo" alt="${escapeHtml(title)}" src="${logoUrl}" data-fallback-title="${escapeHtml(title)}" />`
                                                 : `<h1 class="bst-hero-title-fallback">${escapeHtml(title)}</h1>`}
@@ -1265,6 +1639,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                     <div class="bst-content">
                                         <div class="bst-actions-row">
                                             <div class="bst-actions-left">
+                                                <button type="button" class="bst-btn-success" data-action="play" hidden>Play</button>
                                                 <button type="button" class="bst-btn-request" data-action="request"${requestState.requested ? ' disabled' : ''}>${escapeHtml(requestState.label)}</button>
                                                 ${getRequestModalAdvanced().showRequest4kButton !== false
                                                     ? `<button type="button" class="bst-btn-request-4k" data-action="request-4k"${request4kState.requested ? ' disabled' : ''}>${escapeHtml(request4kState.label)}</button>`
@@ -1273,10 +1648,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="trailer" data-trailer-key="${escapeHtml(trailerKey)}">Trailer</button>`
                                                     : ''}
                                                 <button type="button" class="bst-btn-trailer" data-action="watchlist" data-watchlisted="${isOnWatchlist(data) ? 'true' : 'false'}">${isOnWatchlist(data) ? 'Remove from watchlist' : 'Watchlist'}</button>
+                                                ${browseUrl && tmdbId
+                                                    ? `<button type="button" class="bst-btn-trailer" data-action="open-seerr">Open in Seerr</button>`
+                                                    : ''}
                                                 ${requestState.requested
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="issue">Report issue</button>`
                                                     : ''}
-                                                ${renderRequestLifecycleButtons(data)}
+                                                ${renderRequestLifecycleButtons(data, mediaType)}
                                             </div>
                                         </div>
                                         <div class="bst-details-layout">
@@ -1340,15 +1718,44 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
         const requestBtn = root.querySelector('[data-action="request"]');
         if (requestBtn && !requestBtn.disabled) {
-            requestBtn.addEventListener('click', function () {
+            requestBtn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
                 openQualityModal(mediaId, mediaType, title);
             });
         }
 
         const request4kBtn = root.querySelector('[data-action="request-4k"]');
         if (request4kBtn && !request4kBtn.disabled) {
-            request4kBtn.addEventListener('click', function () {
+            request4kBtn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
                 openQualityModal(mediaId, mediaType, title, undefined, true);
+            });
+        }
+
+        const playBtn = root.querySelector('[data-action="play"]');
+        if (playBtn && tmdbId) {
+            lookupJellyfinPlayItem(tmdbId, mediaType).then(function (item) {
+                if (!item || !playBtn.isConnected) {
+                    return;
+                }
+                playBtn.hidden = false;
+                playBtn.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeDetailsModal();
+                    navigateToJellyfinItem(item);
+                });
+            });
+        }
+
+        const openSeerrBtn = root.querySelector('[data-action="open-seerr"]');
+        if (openSeerrBtn) {
+            openSeerrBtn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                openJellyseerrManage(tmdbId || mediaId, mediaType);
             });
         }
 
@@ -1414,6 +1821,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     if (pendingRequestContext) {
                         if (action === 'cancel-request' || action === 'approve-request' || action === 'decline-request') {
                             pendingRequestContext.isPending = false;
+                            pendingRequestContext.requestStatus = action === 'cancel-request' ? 3 : pendingRequestContext.requestStatus;
                         }
                         if (action === 'retry-request') {
                             pendingRequestContext.isFailed = false;
@@ -1424,10 +1832,46 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 }).catch(function (err) {
                     log.error('request action failed', err);
                     btn.disabled = false;
+                    const status = err && err.status;
+                    if (action === 'cancel-request' && (status === 403 || status === 404)) {
+                        notifyUser('Seerr could not cancel this request. If it is already approved, use Unmonitor instead.');
+                        return;
+                    }
                     notifyUser('That request action failed.');
                 });
             });
         });
+
+        const unmonitorBtn = root.querySelector('[data-action="unmonitor"]');
+        if (unmonitorBtn) {
+            unmonitorBtn.addEventListener('click', function () {
+                const serviceName = mediaType === 'tv' ? 'Sonarr' : 'Radarr';
+                if (!window.confirm('Stop monitoring this title in ' + serviceName + '? Existing files stay on disk.')) {
+                    return;
+                }
+                unmonitorBtn.disabled = true;
+                ApiClient.ajax({
+                    url: ApiClient.getUrl('JellySeerr/servarr/unmonitor'),
+                    type: 'POST',
+                    data: JSON.stringify({
+                        MediaType: mediaType,
+                        MediaId: mediaId,
+                        Seasons: getRequestSeasons(data)
+                    }),
+                    contentType: 'application/json'
+                }).then(function (result) {
+                    notifyUser((result && (result.message || result.Message)) || ('Unmonitored in ' + serviceName));
+                    if (typeof window.__jellySeerrRequestsEnsureMounted === 'function') {
+                        window.__jellySeerrRequestsEnsureMounted({ tabShown: true });
+                    }
+                    return reloadDetailsModal(mediaId, mediaType);
+                }).catch(function (err) {
+                    log.error('unmonitor failed', err);
+                    unmonitorBtn.disabled = false;
+                    notifyUser('Could not unmonitor this title in ' + serviceName + '.');
+                });
+            });
+        }
 
         const issueBtn = root.querySelector('[data-action="issue"]');
         if (issueBtn) {
@@ -1452,7 +1896,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }
 
         root.querySelectorAll('[data-related-id]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
+            btn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
                 const relatedId = parseInt(btn.getAttribute('data-related-id'), 10);
                 const relatedType = btn.getAttribute('data-related-type') || 'movie';
                 closeDetailsModal();

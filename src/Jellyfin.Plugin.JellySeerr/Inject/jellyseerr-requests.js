@@ -67,20 +67,24 @@ window.jellySeerrLog = window.jellySeerrLog || {
             state.clientSettings = {
                 jellyseerrBrowseUrl: (config.jellyseerrBrowseUrl || '').replace(/\/+$/, ''),
                 radarrUrl: (config.radarrUrl || '').replace(/\/+$/, ''),
-                sonarrUrl: (config.sonarrUrl || '').replace(/\/+$/, '')
+                sonarrUrl: (config.sonarrUrl || '').replace(/\/+$/, ''),
+                canOpenLocalServices: config.canOpenLocalServices === true || config.CanOpenLocalServices === true,
+                showQuotaWarnings: config.showQuotaWarnings !== false && config.ShowQuotaWarnings !== false
             };
         }).catch(function (err) {
             log.warn('client settings fetch failed', err);
             state.clientSettings = {
                 jellyseerrBrowseUrl: '',
                 radarrUrl: '',
-                sonarrUrl: ''
+                sonarrUrl: '',
+                canOpenLocalServices: false,
+                showQuotaWarnings: false
             };
         });
     }
 
     function openJellyseerrManage(tmdbId, mediaType) {
-        if (!tmdbId || !mediaType) {
+        if (!canOpenLocalServices() || !tmdbId || !mediaType) {
             return;
         }
 
@@ -121,6 +125,56 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const div = document.createElement('div');
         div.textContent = text || '';
         return div.innerHTML;
+    }
+
+    function formatQuotaPart(entry, label) {
+        if (!entry) {
+            return '';
+        }
+        const limit = Number(entry.limit ?? entry.Limit ?? entry.quotaLimit ?? entry.QuotaLimit ?? entry.quota ?? entry.Quota);
+        if (!Number.isFinite(limit) || limit <= 0) {
+            return '';
+        }
+        const used = Number(entry.used ?? entry.Used ?? entry.quotaUsed ?? entry.QuotaUsed ?? 0);
+        const remainingRaw = entry.remaining ?? entry.Remaining;
+        const left = Number.isFinite(Number(remainingRaw)) ? Number(remainingRaw) : Math.max(0, limit - (Number.isFinite(used) ? used : 0));
+        return left + ' of ' + limit + ' ' + label + ' left';
+    }
+
+    function formatQuotaSummary(data, mediaType) {
+        if (!data) {
+            return '';
+        }
+        if (mediaType === 'movie') {
+            return formatQuotaPart(data.movie || data.Movie, 'movies');
+        }
+        if (mediaType === 'tv') {
+            return formatQuotaPart(data.tv || data.Tv || data.TV, 'TV');
+        }
+        return [formatQuotaPart(data.movie || data.Movie, 'movies'), formatQuotaPart(data.tv || data.Tv || data.TV, 'TV')]
+            .filter(Boolean)
+            .join(' · ');
+    }
+
+    function refreshQuotaChip(container) {
+        const chip = container && container.querySelector('.jellySeerr-requests-quota');
+        if (!chip) {
+            return;
+        }
+        if (!state.clientSettings || state.clientSettings.showQuotaWarnings === false) {
+            chip.hidden = true;
+            chip.textContent = '';
+            return;
+        }
+        const quotaApi = window.jellySeerrQuota;
+        if (!quotaApi || typeof quotaApi.fetch !== 'function') {
+            return;
+        }
+        quotaApi.fetch().then(function (data) {
+            const text = formatQuotaSummary(data);
+            chip.textContent = text;
+            chip.hidden = !text;
+        });
     }
 
     function getPlugin() {
@@ -293,6 +347,17 @@ window.jellySeerrLog = window.jellySeerrLog || {
             });
     }
 
+    function parseSeasonNumbers(raw) {
+        try {
+            const parsed = JSON.parse(raw || '[]');
+            return Array.isArray(parsed)
+                ? parsed.map(Number).filter(function (n) { return Number.isFinite(n); })
+                : [];
+        } catch (err) {
+            return [];
+        }
+    }
+
     function openRequestModal(tmdbId, mediaType, context) {
         if (!tmdbId || !mediaType) {
             return;
@@ -320,8 +385,23 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return base + '/add/new?term=tmdb:' + item.tmdbId;
     }
 
-    function renderCardActions() {
-        return '';
+    function canOpenLocalServices() {
+        return !!(state.clientSettings && state.clientSettings.canOpenLocalServices);
+    }
+
+    function renderCardActions(item) {
+        const parts = [];
+        if (isPlayableRequest(item) && item.jellyfinItemId) {
+            parts.push(`<button type="button" class="jellySeerr-request-action-btn jellySeerr-request-play-btn" data-request-action="play" data-item-id="${escapeHtml(String(item.jellyfinItemId))}" title="Play" aria-label="Play"><span class="material-icons" aria-hidden="true">play_arrow</span></button>`);
+        }
+        if (canOpenLocalServices() && state.clientSettings.jellyseerrBrowseUrl && item.tmdbId) {
+            const mediaType = item.type === 'tv' ? 'tv' : 'movie';
+            parts.push(`<button type="button" class="jellySeerr-request-action-btn jellySeerr-request-seerr-btn" data-request-action="seerr" data-tmdb-id="${escapeHtml(String(item.tmdbId))}" data-media-type="${mediaType}" title="Open in Seerr" aria-label="Open in Seerr"><span class="material-icons" aria-hidden="true">open_in_new</span></button>`);
+        }
+        if (!parts.length) {
+            return '';
+        }
+        return `<div class="jellySeerr-request-card-actions">${parts.join('')}</div>`;
     }
 
     function mapRequestToDiscoverItem(item) {
@@ -422,7 +502,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
             percent: raw.percent ?? raw.Percent ?? 0,
             downloadedBytes: raw.downloadedBytes ?? raw.DownloadedBytes ?? 0,
             totalBytes: raw.totalBytes ?? raw.TotalBytes ?? 0,
-            isActive: raw.isActive ?? raw.IsActive ?? false
+            isActive: raw.isActive ?? raw.IsActive ?? false,
+            openUrl: raw.openUrl || raw.OpenUrl || ''
         };
     }
 
@@ -436,18 +517,20 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const percent = isFailed ? 100 : Math.max(0, Math.min(100, Number(progress.percent) || 0));
         const statusKey = isFailed ? 'failed' : escapeHtml(progress.statusKey);
         const isQueued = progress.statusKey === 'queued';
-        const isDownloaded = !isFailed && String(progress.statusKey || '').indexOf('downloaded-') === 0;
         const sizeText = formatTransfer(progress.downloadedBytes, progress.totalBytes);
 
         const percentText = isFailed
             ? 'Failed'
-            : (isQueued ? `${percent}%` : (isDownloaded ? '100%' : (progress.statusLabel || '')));
+            : (isQueued ? `${percent}%` : (progress.statusLabel || ''));
         const detailText = isFailed
             ? 'Failed to find content'
-            : (sizeText || progress.statusLabel || '');
+            : sizeText;
+
+        const openUrl = canOpenLocalServices() ? (progress.openUrl || '') : '';
+        const openAttr = openUrl ? ` data-open-url="${escapeHtml(openUrl)}" role="link"` : '';
 
         return `
-            <div class="jellySeerr-request-progress" data-status="${statusKey}">
+            <div class="jellySeerr-request-progress" data-status="${statusKey}"${openAttr}>
                 <div class="jellySeerr-request-progress-bar" aria-hidden="true">
                     <div class="jellySeerr-request-progress-fill" style="width:${percent}%"></div>
                 </div>
@@ -521,6 +604,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 data-tmdb-id="${escapeHtml(String(item.tmdbId || ''))}"
                 data-media-type="${escapeHtml(mediaType)}"
                 data-request-id="${escapeHtml(String(item.id || ''))}"
+                data-request-status="${escapeHtml(String(item.requestStatus != null ? item.requestStatus : ''))}"
+                data-season-numbers="${escapeHtml(JSON.stringify(Array.isArray(item.seasonNumbers) ? item.seasonNumbers : []))}"
                 data-request-pending="${item.isPending ? 'true' : 'false'}"
                 data-request-failed="${item.isFailed ? 'true' : 'false'}"
                 data-request-4k="${item.is4k ? 'true' : 'false'}"
@@ -863,6 +948,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
             <div class="verticalSection jellySeerr-requests-panel">
                 <div class="sectionTitleContainer sectionTitleContainer-cards padded-left padded-right">
                     <h2 class="sectionTitle sectionTitle-cards">Requests</h2>
+                    <span class="jellySeerr-requests-quota" hidden></span>
                     <button type="button" class="jellySeerr-requests-scope" data-scope="mine">Mine</button>
                     <button type="button" class="jellySeerr-requests-scope" data-scope="all">All</button>
                     <button type="button" class="jellySeerr-requests-reload" aria-label="Reload requests" title="Reload requests">
@@ -898,6 +984,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
             return loadClientSettings();
         }).then(function () {
             loadRequests(container);
+            refreshQuotaChip(container);
             startAutoRefresh();
         });
     }
@@ -928,6 +1015,27 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 return;
             }
 
+            const actionBtn = event.target.closest('[data-request-action]');
+            if (actionBtn && container.contains(actionBtn)) {
+                event.preventDefault();
+                event.stopPropagation();
+                const action = actionBtn.getAttribute('data-request-action');
+                if (action === 'play') {
+                    navigateToJellyfinItem(actionBtn.getAttribute('data-item-id'));
+                } else if (action === 'seerr') {
+                    openJellyseerrManage(actionBtn.getAttribute('data-tmdb-id'), actionBtn.getAttribute('data-media-type'));
+                }
+                return;
+            }
+
+            const progress = event.target.closest('.jellySeerr-request-progress');
+            if (progress && progress.getAttribute('data-open-url') && container.contains(progress)) {
+                event.preventDefault();
+                event.stopPropagation();
+                openServarrUrl(progress.getAttribute('data-open-url'));
+                return;
+            }
+
             const requestBox = event.target.closest('.jellySeerr-request-box');
             if (requestBox && container.contains(requestBox)) {
                 event.preventDefault();
@@ -937,6 +1045,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     requestBox.getAttribute('data-media-type'),
                     {
                         requestId: parseInt(requestBox.getAttribute('data-request-id'), 10),
+                        requestStatus: parseInt(requestBox.getAttribute('data-request-status'), 10),
+                        seasons: parseSeasonNumbers(requestBox.getAttribute('data-season-numbers')),
                         isPending: requestBox.getAttribute('data-request-pending') === 'true',
                         isFailed: requestBox.getAttribute('data-request-failed') === 'true',
                         is4k: requestBox.getAttribute('data-request-4k') === 'true'

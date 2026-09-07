@@ -38,6 +38,7 @@ public class RequestListService
         int skip,
         string? filter,
         bool allRequests,
+        bool includeLocalServiceUrls,
         CancellationToken cancellationToken)
     {
         PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
@@ -156,6 +157,13 @@ public class RequestListService
                 }
 
                 mapped.Remove("externalServiceId");
+                if (!includeLocalServiceUrls)
+                {
+                    if (mapped["servarrProgress"] is JObject progress)
+                    {
+                        progress.Remove("openUrl");
+                    }
+                }
             }
 
             return (200, BuildResponse(data, mappedRequests, isComingSoonFilter, take).ToString());

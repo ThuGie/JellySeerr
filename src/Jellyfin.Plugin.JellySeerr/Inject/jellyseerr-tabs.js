@@ -49,6 +49,9 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         _tabConfig: null,
         _tabConfigPromise: null,
         _tabsEnsuring: false,
+        _tabsEnsureQueued: false,
+        _tabsEnsureQueueCount: 0,
+        _ensureRetryTimers: null,
 
         TAB_DEFS: {
             movies: { sectionClass: 'jellySeerr-movies-sections', defaultTitle: 'Movies' },
@@ -81,9 +84,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 this.setupNativeTabWatchers();
             }
 
-            this.ensureNativeTabs().then(function () {
-                window.jellySeerrPlugin.scheduleRender();
-            });
+            this.scheduleEnsureNativeTabs();
         },
 
         isContainerVisible: function (container) {
@@ -189,25 +190,60 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             });
         },
 
-        isHomeTabContext: function () {
+        isHomeHash: function () {
             const hash = window.location.hash || '';
-            const onHomeHash = hash === '' ||
+            return hash === '' ||
                 hash === '#/home' ||
                 hash === '#/home.html' ||
                 hash.indexOf('#/home?') === 0 ||
                 hash.indexOf('#/home.html?') === 0;
-            if (!onHomeHash) {
+        },
+
+        isHomeViewEvent: function (event) {
+            const target = event && event.target;
+            if (target && target.nodeType === 1) {
+                if (target.id === 'indexPage') {
+                    return true;
+                }
+                if (typeof target.closest === 'function' && target.closest('#indexPage')) {
+                    return true;
+                }
+            }
+            return this.isHomeHash();
+        },
+
+        isHomeTabContext: function () {
+            if (!this.isHomeHash()) {
                 return false;
             }
 
             const page = document.getElementById('indexPage');
-            if (!page || page.classList.contains('hide')) {
-                return false;
-            }
+            return !!(page && !page.classList.contains('hide'));
+        },
 
-            // indexPage can stay cached while browsing libraries. require it to be the visible page.
-            const visiblePage = document.querySelector('.page:not(.hide)');
-            return !visiblePage || visiblePage.id === 'indexPage';
+        clearEnsureRetries: function () {
+            (this._ensureRetryTimers || []).forEach(function (timer) {
+                clearTimeout(timer);
+            });
+            this._ensureRetryTimers = [];
+        },
+
+        scheduleEnsureNativeTabs: function () {
+            const self = this;
+            self.clearEnsureRetries();
+            [0, 75, 200, 500, 1200].forEach(function (delay) {
+                const timer = setTimeout(function () {
+                    if (!self.isHomeHash()) {
+                        return;
+                    }
+                    self.ensureNativeTabs().then(function () {
+                        if (self.isHomeTabContext()) {
+                            self.scheduleRender();
+                        }
+                    });
+                }, delay);
+                self._ensureRetryTimers.push(timer);
+            });
         },
 
         cleanupjellySeerrHeaderButtons: function () {
@@ -522,28 +558,39 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
         findJellyfinTabButton: function (tabsSlider, kind) {
             const buttons = Array.from(tabsSlider.querySelectorAll('.emby-tab-button'));
-            for (let i = 0; i < buttons.length; i++) {
-                const btn = buttons[i];
-                if (btn.hasAttribute('data-jellySeerr-tab') || (btn.id || '').indexOf('customTabButton_') === 0) {
-                    continue;
-                }
-                const index = parseInt(btn.getAttribute('data-index'), 10);
-                if (kind === 'home' && index === 0) {
-                    return btn;
-                }
-                if (kind === 'favorites' && index === 1) {
-                    return btn;
-                }
-            }
-
-            // Fallback only while still on home: first two non-plugin buttons in DOM order.
             const native = buttons.filter(function (btn) {
                 return !btn.hasAttribute('data-jellySeerr-tab') && (btn.id || '').indexOf('customTabButton_') !== 0;
             });
-            if (kind === 'home') {
-                return native[0] || null;
+
+            function buttonText(btn) {
+                const label = btn.querySelector('.emby-button-foreground');
+                return ((label && label.textContent) || btn.textContent || '').trim().toLowerCase();
             }
-            return native[1] || null;
+
+            if (kind === 'home') {
+                const byLabel = native.find(function (btn) {
+                    return buttonText(btn) === 'home';
+                });
+                if (byLabel) {
+                    return byLabel;
+                }
+                const byIndex = native.find(function (btn) {
+                    return btn.getAttribute('data-index') === '0';
+                });
+                return byIndex || native[0] || null;
+            }
+
+            const byLabel = native.find(function (btn) {
+                const text = buttonText(btn);
+                return text === 'favorites' || text === 'favourites';
+            });
+            if (byLabel) {
+                return byLabel;
+            }
+            const byIndex = native.find(function (btn) {
+                return btn.getAttribute('data-index') === '1';
+            });
+            return byIndex || native[1] || null;
         },
 
         buildDesiredBarSlots: function (config) {
@@ -750,23 +797,38 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         ensureNativeTabs: function () {
             const self = this;
             if (self._tabsEnsuring) {
+                self._tabsEnsureQueued = true;
                 return self._tabsEnsuring;
             }
 
-            if (!self.isHomeTabContext()) {
+            if (!self.isHomeHash()) {
                 self.cleanupjellySeerrHeaderButtons();
                 return Promise.resolve();
             }
 
+            if (!self.isHomeTabContext()) {
+                return Promise.resolve();
+            }
+
             self._tabsEnsuring = self.loadTabConfig().then(function (config) {
-                if (!self.isHomeTabContext()) {
+                if (!self.isHomeHash()) {
                     self.cleanupjellySeerrHeaderButtons();
                     return;
                 }
 
+                if (!self.isHomeTabContext()) {
+                    self._tabsEnsureQueued = true;
+                    return;
+                }
+
                 return self.waitForCustomTabs(config.customTabs, 20).then(function () {
-                    if (!self.isHomeTabContext()) {
+                    if (!self.isHomeHash()) {
                         self.cleanupjellySeerrHeaderButtons();
+                        return;
+                    }
+
+                    if (!self.isHomeTabContext()) {
+                        self._tabsEnsureQueued = true;
                         return;
                     }
 
@@ -774,6 +836,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     const tabsSlider = document.querySelector('.headerTabs .emby-tabs-slider');
                     const tabsEl = document.querySelector('.headerTabs [is="emby-tabs"]');
                     if (!page || !tabsSlider || !tabsEl) {
+                        self._tabsEnsureQueued = true;
                         return;
                     }
 
@@ -793,14 +856,17 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     });
 
                     if (desiredSig === currentSig && panelsMatch) {
+                        self._tabsEnsureQueueCount = 0;
                         self.applyTabTitles(tabsSlider, slots);
                         return;
                     }
 
                     if (!self.applyBarOrder(page, tabsSlider, slots)) {
+                        self._tabsEnsureQueued = true;
                         return;
                     }
 
+                    self._tabsEnsureQueueCount = 0;
                     log.info('native tab bar ready: ' + slots.map(function (s) { return s.key; }).join(', '));
 
                     if (typeof tabsEl.refresh === 'function') {
@@ -815,6 +881,16 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 log.error('failed to ensure native tabs', err);
             }).then(function () {
                 self._tabsEnsuring = null;
+                if (!self._tabsEnsureQueued) {
+                    self._tabsEnsureQueueCount = 0;
+                    return;
+                }
+                self._tabsEnsureQueued = false;
+                self._tabsEnsureQueueCount += 1;
+                if (self.isHomeHash() && self._tabsEnsureQueueCount < 8) {
+                    return self.ensureNativeTabs();
+                }
+                self._tabsEnsureQueueCount = 0;
             });
 
             return self._tabsEnsuring;
@@ -825,18 +901,23 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             log.info('native tab watchers ready');
 
             document.addEventListener('viewshow', function (event) {
-                if (event.target && event.target.id === 'indexPage') {
-                    self.ensureNativeTabs().then(function () {
-                        if (!self.isHomeTabContext()) {
-                            return;
-                        }
-                        self.scheduleRender();
-                    });
-                } else {
-                    // left home for a library/folder view (never leave jellySeerr buttons in the header)
+                if (self.isHomeViewEvent(event)) {
+                    self.scheduleEnsureNativeTabs();
+                    return;
+                }
+
+                if (!self.isHomeHash()) {
                     self.cleanupjellySeerrHeaderButtons();
                     self.scheduleRender();
                 }
+            });
+
+            window.addEventListener('hashchange', function () {
+                if (self.isHomeHash()) {
+                    self.scheduleEnsureNativeTabs();
+                    return;
+                }
+                self.cleanupjellySeerrHeaderButtons();
             });
 
             if (!self._ctButtonObserver && typeof MutationObserver !== 'undefined') {
@@ -845,16 +926,16 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                         clearTimeout(self._ctObserveTimer);
                     }
                     self._ctObserveTimer = setTimeout(function () {
-                        if (self.isHomeTabContext()) {
+                        if (self.isHomeHash()) {
                             self.ensureNativeTabs();
                         } else {
                             self.cleanupjellySeerrHeaderButtons();
                         }
                     }, 250);
                 });
-                const headerTabs = document.querySelector('.headerTabs');
-                if (headerTabs) {
-                    self._ctButtonObserver.observe(headerTabs, { childList: true, subtree: true });
+                const observeRoot = document.querySelector('.skinHeader') || document.body;
+                if (observeRoot) {
+                    self._ctButtonObserver.observe(observeRoot, { childList: true, subtree: true });
                 }
             }
         },
@@ -1952,6 +2033,46 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             return { year: year, yearText: yearText };
         },
 
+        normalizeDiscoverMediaStatus: function (raw) {
+            if (raw == null || raw === '') {
+                return null;
+            }
+            const numeric = parseInt(raw, 10);
+            if (!Number.isNaN(numeric)) {
+                return numeric;
+            }
+            const key = String(raw).trim().toUpperCase();
+            const map = {
+                UNKNOWN: 1,
+                PENDING: 2,
+                PROCESSING: 3,
+                PARTIALLY_AVAILABLE: 4,
+                AVAILABLE: 5,
+                DELETED: 6,
+                BLACKLISTED: 7,
+                BLOCKED: 7,
+                BLOCKLISTED: 7
+            };
+            return map[key] || null;
+        },
+
+        getDiscoverMediaStatus: function (item) {
+            return this.normalizeDiscoverMediaStatus(this.getProviderId(item, 'JellyseerrMediaStatus'));
+        },
+
+        buildDiscoverRequestButton: function (item, mediaId, mediaType) {
+            const status = this.getDiscoverMediaStatus(item);
+            const icon = status === 5
+                ? 'check'
+                : (status === 2 || status === 3
+                    ? 'hourglass_empty'
+                    : (status === 7 ? 'block' : 'add'));
+            const statusAttr = status != null ? ` data-media-status="${status}"` : '';
+            return `<button is="discover-requestbutton" type="button" class="discover-requestbutton cardOverlayButton cardOverlayButton-hover paper-icon-button-light emby-button" data-id="${mediaId}" data-media-type="${mediaType}"${statusAttr}>
+                                <span class="material-icons cardOverlayButtonIcon cardOverlayButtonIcon-hover" aria-hidden="true">${icon}</span>
+                            </button>`;
+        },
+
         createDiscoverPosterCards: function (items, forGrid, options) {
             const self = this;
             options = options || {};
@@ -1978,13 +2099,13 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
                 const safeUrl = self.escapeHtml(posterUrl || '');
                 const imageAttrs = posterUrl ? ` data-src="${safeUrl}"` : '';
+                const mediaStatus = self.getDiscoverMediaStatus(item);
+                const statusAttr = mediaStatus != null ? ` data-media-status="${mediaStatus}"` : '';
                 const overlayHtml = interactive ? `
                     <div class="cardOverlayContainer">
                         <div class="cardImageContainer"></div>
                         <div class="cardOverlayButton-br flex">
-                            <button is="discover-requestbutton" type="button" class="discover-requestbutton cardOverlayButton cardOverlayButton-hover paper-icon-button-light emby-button" data-id="${mediaId}" data-media-type="${mediaType}">
-                                <span class="material-icons cardOverlayButtonIcon cardOverlayButtonIcon-hover add" aria-hidden="true"></span>
-                            </button>
+                            ${self.buildDiscoverRequestButton(item, mediaId, mediaType)}
                         </div>
                     </div>` : '';
                 const metaHtml = includeMetaText ? (function () {
@@ -2005,7 +2126,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 const chromeHtml = letterboxdSlot ? self.renderLetterboxdCardChrome() : '';
 
                 const cardHtml = `
-                    <div class="card ${cardType} jellySeerr-discover-card${staticClass}${letterboxdClass}" data-tmdb-id="${mediaId}" data-media-type="${mediaType}"${ariaSelected}>
+                    <div class="card ${cardType} jellySeerr-discover-card${staticClass}${letterboxdClass}" data-tmdb-id="${mediaId}" data-media-type="${mediaType}"${statusAttr}${ariaSelected}>
                         <div class="${boxClass}">
                             <div class="cardScalable">
                                 <div class="cardPadder ${padderType} lazy-hidden-children"></div>
@@ -2050,13 +2171,13 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 const safeBackdropPath = self.escapeHtml(tmdbBackdropPath);
                 const fallbackAttr = safeFallback ? ` data-fallback-src="${safeFallback}"` : '';
                 const backdropPathAttr = safeBackdropPath ? ` data-tmdb-backdrop-path="${safeBackdropPath}"` : '';
+                const mediaStatus = self.getDiscoverMediaStatus(item);
+                const statusAttr = mediaStatus != null ? ` data-media-status="${mediaStatus}"` : '';
                 const overlayHtml = interactive ? `
                     <div class="cardOverlayContainer">
                         <div class="cardImageContainer"></div>
                         <div class="cardOverlayButton-br flex">
-                            <button is="discover-requestbutton" type="button" class="discover-requestbutton cardOverlayButton cardOverlayButton-hover paper-icon-button-light emby-button" data-id="${mediaId}" data-media-type="${mediaType}">
-                                <span class="material-icons cardOverlayButtonIcon cardOverlayButtonIcon-hover add" aria-hidden="true"></span>
-                            </button>
+                            ${self.buildDiscoverRequestButton(item, mediaId, mediaType)}
                         </div>
                     </div>` : '';
                 const metaHtml = includeMetaText ? (function () {
@@ -2073,7 +2194,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 const chromeHtml = letterboxdSlot ? self.renderLetterboxdCardChrome() : '';
 
                 const cardHtml = `
-                    <div class="card jellySeerr-discover-card jellySeerr-discover-card--backdrop${gridClass}${staticClass}${letterboxdClass}" data-tmdb-id="${mediaId}" data-media-type="${mediaType}"${fallbackAttr}${backdropPathAttr}${ariaSelected}>
+                    <div class="card jellySeerr-discover-card jellySeerr-discover-card--backdrop${gridClass}${staticClass}${letterboxdClass}" data-tmdb-id="${mediaId}" data-media-type="${mediaType}"${statusAttr}${fallbackAttr}${backdropPathAttr}${ariaSelected}>
                         <div class="${boxClass}">
                             <div class="cardScalable jellySeerr-discover-backdrop-scalable">
                                 <div class="cardPadder jellySeerr-discover-backdrop-padder"></div>
@@ -2595,6 +2716,12 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
                 const mediaId = btn.getAttribute('data-id');
                 const mediaType = btn.getAttribute('data-media-type');
+                const status = parseInt(btn.getAttribute('data-media-status'), 10);
+                const openDetails = status === 2 || status === 3 || status === 5 || status === 7;
+                if (openDetails && window.jellySeerrModal && window.jellySeerrModal.open) {
+                    window.jellySeerrModal.open(mediaId, mediaType);
+                    return;
+                }
                 if (window.jellySeerrModal && window.jellySeerrModal.openQualityPicker) {
                     window.jellySeerrModal.openQualityPicker(mediaId, mediaType);
                 }
@@ -3177,7 +3304,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     return;
                 }
 
-                self.renderSearchSection(currentPage, query, result.items);
+                self.renderSearchSection(currentPage, query, result.items, result.total);
             }).catch(function (err) {
                 if (self._activeSearchToken === token) {
                     log.warn('search failed for "' + query + '"', err);
@@ -3186,24 +3313,27 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             });
         },
 
-        renderSearchSection: function (searchPage, query, items) {
+        renderSearchSection: function (searchPage, query, items, total) {
             this.removeSearchSection();
             if (!items || !items.length) {
                 return;
             }
 
+            const count = Number(total) > 0 ? Number(total) : items.length;
+            const heading = 'Seerr results (' + count + ')';
             const safeQuery = this.escapeHtml(query);
+            const safeHeading = this.escapeHtml(heading);
             const useNativeCards = this.shouldUseNativeSearchResults();
             const section = useNativeCards
                 ? this.mountFromHtml(`
                     <div class="verticalSection jellySeerr-poster-section jellySeerr-search-section jellySeerr-section-fadein" data-query="${safeQuery}">
-                        <h2 class="sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right">Seerr results</h2>
+                        <h2 class="sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right">${safeHeading}</h2>
                         <div is="emby-itemscontainer" class="itemsContainer scrollSlider focuscontainer-x animatedScrollX" data-monitor="videoplayback,markplayed"></div>
                     </div>`)
                 : this.mountFromHtml(`
                     <div class="verticalSection jellySeerr-poster-section jellySeerr-search-section jellySeerr-section-fadein" data-query="${safeQuery}">
                         <div class="sectionTitleContainer sectionTitleContainer-cards padded-left">
-                            <h2 class="sectionTitle sectionTitle-cards">Seerr results</h2>
+                            <h2 class="sectionTitle sectionTitle-cards">${safeHeading}</h2>
                         </div>
                         <div is="emby-itemscontainer" class="itemsContainer scrollSlider focuscontainer-x"></div>
                     </div>`);

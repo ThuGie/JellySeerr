@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text;
 using Jellyfin.Plugin.JellySeerr.Configuration;
 using Jellyfin.Plugin.JellySeerr.Configuration.Advanced;
+using Jellyfin.Plugin.JellySeerr.Helpers;
 using Jellyfin.Plugin.JellySeerr.Model;
 using Jellyfin.Plugin.JellySeerr.Services;
 using MediaBrowser.Controller.Library;
@@ -24,6 +25,7 @@ public class JellySeerrController : ControllerBase
     private readonly ImageCacheService _imageCacheService;
     private readonly TmdbBackdropService _tmdbBackdropService;
     private readonly JustWatchQualitiesService _justWatchQualitiesService;
+    private readonly ServarrProgressService _servarrProgressService;
     private readonly SeerrApiClient _seerr;
 
     public JellySeerrController(
@@ -36,6 +38,7 @@ public class JellySeerrController : ControllerBase
         ImageCacheService imageCacheService,
         TmdbBackdropService tmdbBackdropService,
         JustWatchQualitiesService justWatchQualitiesService,
+        ServarrProgressService servarrProgressService,
         SeerrApiClient seerr)
     {
         _discoveryService = discoveryService;
@@ -47,6 +50,7 @@ public class JellySeerrController : ControllerBase
         _imageCacheService = imageCacheService;
         _tmdbBackdropService = tmdbBackdropService;
         _justWatchQualitiesService = justWatchQualitiesService;
+        _servarrProgressService = servarrProgressService;
         _seerr = seerr;
     }
 
@@ -305,10 +309,10 @@ public class JellySeerrController : ControllerBase
 
     [HttpGet("search")]
     [Authorize]
-    public ActionResult Search([FromQuery] string q, [FromServices] IUserManager userManager)
+    public ActionResult Search([FromQuery] string? q, [FromQuery] string? query, [FromServices] IUserManager userManager)
     {
         string? username = GetUsername(userManager);
-        return Ok(_discoveryService.Search(username ?? string.Empty, q ?? string.Empty));
+        return Ok(_discoveryService.Search(username ?? string.Empty, q ?? query ?? string.Empty));
     }
 
     [HttpGet("genres/movie")]
@@ -351,16 +355,23 @@ public class JellySeerrController : ControllerBase
             ? null
             : await _userMappingService.ResolveAsync(userId, username, cancellationToken).ConfigureAwait(false);
 
+        bool canOpenLocal = CanOpenLocalServices();
+        string browse = canOpenLocal ? (browseUrl?.Trim() ?? string.Empty) : string.Empty;
+
         return Ok(new
         {
             tmdbApiKey = config.TmdbApiKey?.Trim() ?? string.Empty,
-            jellyseerrBrowseUrl = browseUrl?.Trim() ?? string.Empty,
-            radarrUrl = ServarrUrl(config.RadarrUrl, config.RadarrApiKey),
-            sonarrUrl = ServarrUrl(config.SonarrUrl, config.SonarrApiKey),
+            jellyseerrBrowseUrl = browse,
+            radarrUrl = canOpenLocal ? ServarrUrl(config.RadarrUrl, config.RadarrApiKey) : string.Empty,
+            sonarrUrl = canOpenLocal ? ServarrUrl(config.SonarrUrl, config.SonarrApiKey) : string.Empty,
+            canOpenLocalServices = canOpenLocal,
+            radarrConfigured = !string.IsNullOrWhiteSpace(ServarrUrl(config.RadarrUrl, config.RadarrApiKey)),
+            sonarrConfigured = !string.IsNullOrWhiteSpace(ServarrUrl(config.SonarrUrl, config.SonarrApiKey)),
             confirmCancel = config.ConfirmCancel,
             enableManagerTools = config.EnableManagerTools,
             canManageRequests = match != null && UserMappingService.HasManageRequests(match.Permissions) && config.EnableManagerTools,
-            seerrUserId = match?.Id ?? 0
+            seerrUserId = match?.Id ?? 0,
+            showQuotaWarnings = config.ShowQuotaWarnings
         });
     }
 
@@ -442,7 +453,7 @@ public class JellySeerrController : ControllerBase
             && JellySeerrPlugin.Instance.Configuration.EnableManagerTools;
 
         (int statusCode, string body) = await _requestListService
-            .GetRequestsAsync(userId, username, take, skip, filter, allowAll, cancellationToken)
+            .GetRequestsAsync(userId, username, take, skip, filter, allowAll, CanOpenLocalServices(), cancellationToken)
             .ConfigureAwait(false);
         return new ContentResult { StatusCode = statusCode, Content = body, ContentType = "application/json" };
     }
@@ -489,6 +500,37 @@ public class JellySeerrController : ControllerBase
     [Authorize]
     public Task<IActionResult> BulkCancel([FromServices] IUserManager userManager, [FromBody] BulkCancelPayload payload, CancellationToken cancellationToken) =>
         ProxyUser(userManager, (id, name) => _requestService.BulkCancelAsync(id, name, payload.Ids ?? new List<int>(), cancellationToken));
+
+    [HttpPost("servarr/unmonitor")]
+    [Authorize]
+    public async Task<IActionResult> Unmonitor(
+        [FromServices] IUserManager userManager,
+        [FromBody] UnmonitorPayload payload,
+        CancellationToken cancellationToken)
+    {
+        Guid userId = GetUserId();
+        string? username = GetUsername(userManager);
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(username))
+        {
+            return Forbid();
+        }
+
+        SeerrUserMatch? match = await _userMappingService.ResolveAsync(userId, username, cancellationToken).ConfigureAwait(false);
+        if (match == null || !match.Mapped)
+        {
+            return StatusCode(400, new { message = "Could not match this Jellyfin user to a Seerr user." });
+        }
+
+        if (payload == null || payload.MediaId <= 0)
+        {
+            return BadRequest(new { message = "MediaId is required." });
+        }
+
+        (int status, string body, string contentType) = await _servarrProgressService
+            .UnmonitorAsync(payload.MediaType, payload.MediaId, payload.Seasons, cancellationToken)
+            .ConfigureAwait(false);
+        return new ContentResult { StatusCode = status, Content = body, ContentType = contentType };
+    }
 
     [HttpPost("watchlist")]
     [Authorize]
@@ -573,6 +615,17 @@ public class JellySeerrController : ControllerBase
 
     private static string ServarrUrl(string? url, string? apiKey) =>
         !string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(apiKey) ? url.Trim().TrimEnd('/') : string.Empty;
+
+    private bool CanOpenLocalServices()
+    {
+        PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
+        return LocalNetworkAccessHelper.CanOpenLocalServices(
+            HttpContext.Connection.RemoteIpAddress,
+            config.JellyseerrUrl,
+            config.ExternalJellyseerrUrl,
+            config.RadarrUrl,
+            config.SonarrUrl);
+    }
 
     private ActionResult ServeEmbedded(string resourceName, string contentType)
     {

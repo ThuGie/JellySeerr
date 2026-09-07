@@ -1,4 +1,6 @@
 ﻿using System.Globalization;
+using System.Net.Http;
+using System.Text;
 using Jellyfin.Plugin.JellySeerr.Configuration;
 using Jellyfin.Plugin.JellySeerr.Configuration.Advanced;
 using Jellyfin.Plugin.JellySeerr.Helpers;
@@ -14,6 +16,118 @@ public sealed class ServarrProgressService
     public ServarrProgressService(ILogger<ServarrProgressService> logger)
     {
         _logger = logger;
+    }
+
+    public async Task<(int StatusCode, string Body, string ContentType)> UnmonitorAsync(
+        string? mediaType,
+        int tmdbId,
+        IReadOnlyCollection<int>? seasons,
+        CancellationToken cancellationToken)
+    {
+        PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
+        bool isTv = string.Equals(mediaType, "tv", StringComparison.OrdinalIgnoreCase);
+        if (tmdbId <= 0)
+        {
+            return MessageResult(400, "A TMDB id is required.");
+        }
+
+        try
+        {
+            if (isTv)
+            {
+                if (!IsSonarrConfigured(config))
+                {
+                    return MessageResult(400, "Sonarr is not configured in JellySeerr.");
+                }
+
+                using HttpClient client = CreateClient(config.SonarrUrl!, config.SonarrApiKey!);
+                JObject? series = await FindByTmdbAsync(client, "series", tmdbId, cancellationToken).ConfigureAwait(false);
+                if (series == null)
+                {
+                    return MessageResult(404, "This show is not in Sonarr.");
+                }
+
+                HashSet<int> seasonNumbers = seasons?.Where(n => n >= 0).ToHashSet() ?? new HashSet<int>();
+                bool includeSpecials = AdvancedSettingsHelper.Resolve(config).Servarr.IncludeSpecialsInSeriesProgress;
+                JArray? seasonList = series.Value<JArray>("seasons");
+                if (seasonList != null)
+                {
+                    foreach (JObject season in seasonList.OfType<JObject>())
+                    {
+                        int number = season.Value<int?>("seasonNumber") ?? -1;
+                        if (number < 0)
+                        {
+                            continue;
+                        }
+
+                        if (number == 0 && !includeSpecials && (seasonNumbers.Count == 0 || !seasonNumbers.Contains(0)))
+                        {
+                            continue;
+                        }
+
+                        if (seasonNumbers.Count == 0 || seasonNumbers.Contains(number))
+                        {
+                            season["monitored"] = false;
+                        }
+                    }
+                }
+
+                bool anySeasonMonitored = seasonList?
+                    .OfType<JObject>()
+                    .Any(s => (s.Value<int?>("seasonNumber") ?? 0) != 0 && s.Value<bool?>("monitored") == true)
+                    == true;
+                if (seasonNumbers.Count == 0 || !anySeasonMonitored)
+                {
+                    series["monitored"] = false;
+                }
+
+                int? id = series.Value<int?>("id");
+                if (!id.HasValue)
+                {
+                    return MessageResult(500, "Sonarr did not return a series id.");
+                }
+
+                if (!await PutJsonAsync(client, $"series/{id.Value}", series, cancellationToken).ConfigureAwait(false))
+                {
+                    return MessageResult(502, "Sonarr rejected the unmonitor update.");
+                }
+
+                JsonMemoryCache.RemoveByPrefix("servarr:sonarr:");
+                return MessageResult(200, "Unmonitored in Sonarr. Existing files were left on disk.");
+            }
+
+            if (!IsRadarrConfigured(config))
+            {
+                return MessageResult(400, "Radarr is not configured in JellySeerr.");
+            }
+
+            using HttpClient radarr = CreateClient(config.RadarrUrl!, config.RadarrApiKey!);
+            JObject? movie = await FindByTmdbAsync(radarr, "movie", tmdbId, cancellationToken).ConfigureAwait(false);
+            if (movie == null)
+            {
+                return MessageResult(404, "This movie is not in Radarr.");
+            }
+
+            movie["monitored"] = false;
+            int? movieId = movie.Value<int?>("id");
+            if (!movieId.HasValue)
+            {
+                return MessageResult(500, "Radarr did not return a movie id.");
+            }
+
+            if (!await PutJsonAsync(radarr, $"movie/{movieId.Value}", movie, cancellationToken).ConfigureAwait(false))
+            {
+                return MessageResult(502, "Radarr rejected the unmonitor update.");
+            }
+
+            JsonMemoryCache.RemoveByPrefix("servarr:radarr:");
+            return MessageResult(200, "Unmonitored in Radarr. Existing files were left on disk.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "JS • failed to unmonitor {MediaType}/{TmdbId}", mediaType, tmdbId);
+            return MessageResult(502, "Could not reach Radarr/Sonarr to unmonitor this title.");
+        }
     }
 
     public async Task EnrichRequestsAsync(JArray requests, CancellationToken cancellationToken)
@@ -307,6 +421,7 @@ public sealed class ServarrProgressService
         }
 
         int? seriesId = series.Value<int?>("id") ?? context.ExternalServiceId;
+        string? seriesOpenUrl = BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(series), isMovie: false);
         List<JObject> queueItems = seriesId.HasValue && snapshot.QueueBySeriesId.TryGetValue(seriesId.Value, out List<JObject>? queued)
             ? FilterQueueBySeasons(queued, context.SeasonNumbers)
             : new List<JObject>();
@@ -316,50 +431,169 @@ public sealed class ServarrProgressService
             return BuildQueueProgress(queueItems, snapshot.BaseUrl, series, isMovie: false);
         }
 
+        ServarrProgressInfo? fromSeasons = BuildFromSeriesSeasons(series, context.SeasonNumbers, seriesOpenUrl);
+        if (fromSeasons != null && HasLibraryFiles(fromSeasons))
+        {
+            return fromSeasons;
+        }
+
         List<JObject> episodes = seriesId.HasValue && snapshot.EpisodesBySeriesId.TryGetValue(seriesId.Value, out List<JObject>? eps)
             ? FilterEpisodesBySeasons(eps, context.SeasonNumbers)
             : new List<JObject>();
 
         if (episodes.Count == 0)
         {
+            if (fromSeasons != null)
+            {
+                return fromSeasons;
+            }
+
             bool monitored = series.Value<bool?>("monitored") ?? false;
             JObject? stats = series.Value<JObject>("statistics");
             long sizeOnDisk = stats?.Value<long?>("sizeOnDisk") ?? series.Value<long?>("sizeOnDisk") ?? 0;
             bool hasFile = sizeOnDisk > 0;
-            return BuildLibraryProgress(hasFile, monitored, isUnreleased: false, sizeOnDisk, BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(series), isMovie: false));
+            return BuildLibraryProgress(hasFile, monitored, isUnreleased: false, sizeOnDisk, seriesOpenUrl);
         }
 
+        List<JObject> countable = episodes.Where(CountsTowardLibraryProgress).ToList();
+        long totalSize = episodes.Where(e => e.Value<bool?>("hasFile") == true).Sum(ReadEpisodeSizeBytes);
         bool anyFile = episodes.Any(e => e.Value<bool?>("hasFile") == true);
-        bool allHaveFiles = episodes.All(e => e.Value<bool?>("hasFile") == true);
-        bool anyMonitored = episodes.Any(e => e.Value<bool?>("monitored") == true);
-        bool allMonitored = episodes.All(e => e.Value<bool?>("monitored") == true);
-        bool allUnreleased = episodes.All(e =>
-            IsUnreleasedMedia(e.Value<string>("airDateUtc") ?? e.Value<string>("airDate")));
-        long totalSize = episodes.Where(e => e.Value<bool?>("hasFile") == true)
-            .Sum(ReadEpisodeSizeBytes);
-        string? seriesOpenUrl = BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(series), isMovie: false);
+        bool anyMonitored = episodes.Any(e => e.Value<bool?>("monitored") == true)
+            || (series.Value<bool?>("monitored") ?? false);
 
-        if (allUnreleased && !anyFile)
+        if (countable.Count == 0)
         {
-            return BuildLibraryProgress(false, anyMonitored, true, 0, seriesOpenUrl);
+            if (anyFile)
+            {
+                return BuildLibraryProgress(true, anyMonitored, false, totalSize, seriesOpenUrl);
+            }
+
+            if (fromSeasons != null)
+            {
+                return fromSeasons;
+            }
+
+            bool allUnreleased = episodes.All(e =>
+                IsUnreleasedMedia(e.Value<string>("airDateUtc") ?? e.Value<string>("airDate")));
+            return BuildLibraryProgress(false, anyMonitored, allUnreleased, 0, seriesOpenUrl);
         }
 
-        if (allHaveFiles && allMonitored)
+        int fileCount = countable.Count(e => e.Value<bool?>("hasFile") == true);
+        bool allHaveFiles = fileCount == countable.Count;
+        if (anyFile && !allHaveFiles)
         {
-            return BuildLibraryProgress(true, true, false, totalSize, seriesOpenUrl);
+            return BuildPartialProgress(fileCount, countable.Count, totalSize, seriesOpenUrl);
         }
 
         if (allHaveFiles)
         {
-            return BuildLibraryProgress(true, false, false, totalSize, seriesOpenUrl);
+            return BuildLibraryProgress(true, anyMonitored, false, totalSize, seriesOpenUrl);
         }
 
-        if (!anyFile && anyMonitored)
+        return fromSeasons ?? BuildLibraryProgress(false, anyMonitored, false, 0, seriesOpenUrl);
+    }
+
+    private static bool HasLibraryFiles(ServarrProgressInfo progress) =>
+        progress.DownloadedBytes > 0
+        || string.Equals(progress.StatusKey, "partial", StringComparison.OrdinalIgnoreCase)
+        || progress.StatusKey.StartsWith("downloaded-", StringComparison.OrdinalIgnoreCase);
+
+    private static ServarrProgressInfo? BuildFromSeriesSeasons(JObject series, HashSet<int> seasonNumbers, string? openUrl)
+    {
+        JArray? seasons = series.Value<JArray>("seasons");
+        if (seasons == null || seasons.Count == 0)
         {
-            return BuildLibraryProgress(false, true, false, 0, seriesOpenUrl);
+            return null;
         }
 
-        return BuildLibraryProgress(false, false, false, 0, seriesOpenUrl);
+        bool includeSpecials = AdvancedSettingsHelper.Resolve(JellySeerrPlugin.Instance.Configuration).Servarr.IncludeSpecialsInSeriesProgress;
+        List<JObject> wanted = seasons.OfType<JObject>().Where(season =>
+        {
+            int number = season.Value<int?>("seasonNumber") ?? -1;
+            if (number < 0)
+            {
+                return false;
+            }
+
+            if (number == 0 && !includeSpecials)
+            {
+                return false;
+            }
+
+            return seasonNumbers.Count == 0 || seasonNumbers.Contains(number);
+        }).ToList();
+
+        if (wanted.Count == 0)
+        {
+            return null;
+        }
+
+        if (seasonNumbers.Count == 0)
+        {
+            List<JObject> present = wanted.Where(season =>
+            {
+                JObject? stats = season.Value<JObject>("statistics");
+                int files = stats?.Value<int?>("episodeFileCount") ?? 0;
+                bool monitored = season.Value<bool?>("monitored") ?? false;
+                return files > 0 || monitored;
+            }).ToList();
+            if (present.Count > 0)
+            {
+                wanted = present;
+            }
+        }
+
+        int fileCount = 0;
+        int episodeCount = 0;
+        long size = 0;
+        bool anyMonitored = false;
+        bool anyStats = false;
+        foreach (JObject season in wanted)
+        {
+            anyMonitored |= season.Value<bool?>("monitored") == true;
+            JObject? stats = season.Value<JObject>("statistics");
+            if (stats == null)
+            {
+                continue;
+            }
+
+            anyStats = true;
+            fileCount += stats.Value<int?>("episodeFileCount") ?? 0;
+            episodeCount += stats.Value<int?>("episodeCount") ?? 0;
+            size += stats.Value<long?>("sizeOnDisk") ?? 0;
+        }
+
+        if (!anyStats)
+        {
+            return null;
+        }
+
+        if (fileCount > 0 && (episodeCount <= 0 || fileCount >= episodeCount))
+        {
+            return BuildLibraryProgress(true, anyMonitored, false, size, openUrl);
+        }
+
+        if (fileCount > 0)
+        {
+            return BuildPartialProgress(fileCount, episodeCount, size, openUrl);
+        }
+
+        return BuildLibraryProgress(false, anyMonitored, false, 0, openUrl);
+    }
+
+    private static ServarrProgressInfo BuildPartialProgress(int fileCount, int episodeCount, long sizeOnDisk, string? openUrl)
+    {
+        int percent = episodeCount > 0 ? (int)Math.Round(fileCount * 100.0 / episodeCount) : 0;
+        return new ServarrProgressInfo
+        {
+            StatusLabel = $"{fileCount} of {episodeCount} episodes",
+            StatusKey = "partial",
+            Percent = Math.Clamp(percent, 0, 100),
+            DownloadedBytes = sizeOnDisk,
+            TotalBytes = sizeOnDisk,
+            IsActive = false,
+            OpenUrl = openUrl
+        };
     }
 
     private static ServarrProgressInfo BuildQueueProgress(IReadOnlyCollection<JObject> queueItems, string baseUrl, JObject? media, bool isMovie)
@@ -481,6 +715,45 @@ public sealed class ServarrProgressService
 
         return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTime parsed)
             && parsed.ToUniversalTime() > DateTime.UtcNow;
+    }
+
+    private static bool CountsTowardLibraryProgress(JObject episode)
+    {
+        if (episode.Value<bool?>("hasFile") == true)
+        {
+            return true;
+        }
+
+        string? air = episode.Value<string>("airDateUtc") ?? episode.Value<string>("airDate");
+        if (string.IsNullOrWhiteSpace(air))
+        {
+            return false;
+        }
+
+        return !IsUnreleasedMedia(air);
+    }
+
+    private static (int StatusCode, string Body, string ContentType) MessageResult(int statusCode, string message) =>
+        (statusCode, new JObject { ["message"] = message }.ToString(Newtonsoft.Json.Formatting.None), "application/json");
+
+    private static async Task<JObject?> FindByTmdbAsync(HttpClient client, string resource, int tmdbId, CancellationToken cancellationToken)
+    {
+        JArray? list = await GetJsonArrayAsync(client, $"{resource}?tmdbId={tmdbId}", cancellationToken).ConfigureAwait(false);
+        JObject? match = list?.OfType<JObject>().FirstOrDefault(item => item.Value<int?>("tmdbId") == tmdbId);
+        if (match != null)
+        {
+            return match;
+        }
+
+        JArray? all = await GetJsonArrayAsync(client, resource, cancellationToken).ConfigureAwait(false);
+        return all?.OfType<JObject>().FirstOrDefault(item => item.Value<int?>("tmdbId") == tmdbId);
+    }
+
+    private static async Task<bool> PutJsonAsync(HttpClient client, string path, JObject body, CancellationToken cancellationToken)
+    {
+        using StringContent content = new(body.ToString(Newtonsoft.Json.Formatting.None), Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await client.PutAsync(path.TrimStart('/'), content, cancellationToken).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
     }
 
     private static List<JObject> FilterQueueBySeasons(IEnumerable<JObject> queueItems, HashSet<int> seasonNumbers)

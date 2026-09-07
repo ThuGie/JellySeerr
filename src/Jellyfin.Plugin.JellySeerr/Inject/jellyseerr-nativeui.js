@@ -85,18 +85,25 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 const metaHtml = includeMetaText ? `
                     <div class="cardText cardTextCentered cardText-first"><bdi><span title="${safeName}">${safeName}</span></bdi></div>
                     <div class="cardText cardTextCentered cardText-secondary"><bdi><span title="${meta.year}">${meta.yearText}</span></bdi></div>` : '';
+                const overlayButton = typeof plugin.buildDiscoverRequestButton === 'function'
+                    ? plugin.buildDiscoverRequestButton(item, mediaId, mediaType)
+                    : `<button is="discover-requestbutton" type="button" class="discover-requestbutton cardOverlayButton cardOverlayButton-hover paper-icon-button-light emby-button" data-id="${mediaId}" data-media-type="${mediaType}">
+                                <span class="material-icons cardOverlayButtonIcon cardOverlayButtonIcon-hover add" aria-hidden="true"></span>
+                            </button>`;
                 const overlayHtml = interactive ? `
                     <div class="cardOverlayContainer">
                         <div class="cardImageContainer"></div>
                         <div class="cardOverlayButton-br flex">
-                            <button is="discover-requestbutton" type="button" class="discover-requestbutton cardOverlayButton cardOverlayButton-hover paper-icon-button-light emby-button" data-id="${mediaId}" data-media-type="${mediaType}">
-                                <span class="material-icons cardOverlayButtonIcon cardOverlayButtonIcon-hover add" aria-hidden="true"></span>
-                            </button>
+                            ${overlayButton}
                         </div>
                     </div>` : '';
 
+                const mediaStatus = typeof plugin.getDiscoverMediaStatus === 'function'
+                    ? plugin.getDiscoverMediaStatus(item)
+                    : null;
+                const statusAttr = mediaStatus != null ? ` data-media-status="${mediaStatus}"` : '';
                 return `
-                    <div class="card ${cardType} card-hoverable card-withuserdata" data-jellySeerr-native-card="true" data-tmdb-id="${mediaId}" data-media-type="${mediaType}" data-name="${safeName}" data-year="${yearValue}" data-rating="${ratingValue}" data-use-poster="${usePoster ? 'true' : 'false'}"${fallbackAttr}${backdropPathAttr}${posterAttr}>
+                    <div class="card ${cardType} card-hoverable card-withuserdata" data-jellySeerr-native-card="true" data-tmdb-id="${mediaId}" data-media-type="${mediaType}" data-name="${safeName}" data-year="${yearValue}" data-rating="${ratingValue}" data-use-poster="${usePoster ? 'true' : 'false'}"${statusAttr}${fallbackAttr}${backdropPathAttr}${posterAttr}>
                         <div class="cardBox cardBox-bottompadded">
                             <div class="cardScalable">
                                 <div class="cardPadder ${padderType} jellySeerr-card-thumb-skeleton"></div>

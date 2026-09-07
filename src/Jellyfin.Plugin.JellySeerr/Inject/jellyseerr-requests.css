@@ -4,6 +4,16 @@
     gap: 0.75em;
 }
 
+.jellySeerr-requests-quota {
+    font-size: 0.85em;
+    color: var(--secondaryTextColor, rgba(255, 255, 255, 0.65));
+    white-space: nowrap;
+}
+
+.jellySeerr-request-progress[data-open-url] {
+    cursor: pointer;
+}
+
 .jellySeerr-requests-reload {
     margin-left: auto;
     display: inline-flex;
@@ -306,6 +316,14 @@
 
 .jellySeerr-request-progress[data-status="queued"] .jellySeerr-request-progress-fill {
     background: #9c27b0;
+}
+
+.jellySeerr-request-progress[data-status="partial"] .jellySeerr-request-progress-bar {
+    background: rgba(255, 193, 7, 0.25);
+}
+
+.jellySeerr-request-progress[data-status="partial"] .jellySeerr-request-progress-fill {
+    background: #ffc107;
 }
 
 .jellySeerr-request-progress[data-status="unreleased"] .jellySeerr-request-progress-bar {

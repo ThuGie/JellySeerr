@@ -102,11 +102,16 @@ public class DiscoveryService
                 }
             }
 
+            int totalResults = json.Value<int?>("totalResults")
+                ?? json.Value<int?>("total_results")
+                ?? json.Value<int?>("total")
+                ?? items.Count;
+
             return new QueryResult<BaseItemDto>
             {
                 Items = items.ToArray(),
                 StartIndex = 0,
-                TotalRecordCount = items.Count
+                TotalRecordCount = totalResults
             };
         }
         catch (Exception ex)
@@ -580,6 +585,29 @@ public class DiscoveryService
         float rating = item.Value<float?>("vote_average") ?? item.Value<float?>("voteAverage") ?? 0f;
         string? mediaType = item.Value<string>("mediaType");
         int? tmdbId = item.Value<int?>("tmdbId") ?? item.Value<int?>("id");
+        JObject? mediaInfo = item.Value<JObject>("mediaInfo") ?? item.Value<JObject>("MediaInfo");
+
+        Dictionary<string, string> providerIds = new()
+        {
+            { "Jellyseerr", item.Value<int>("id").ToString() },
+            { "JellyseerrPoster", posterUrl },
+            { "JellyseerrBackdrop", backdropUrl },
+            { "TmdbPosterPath", posterPath },
+            { "TmdbBackdropPath", backdropPath },
+            { "Tmdb", tmdbId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty }
+        };
+
+        string? mediaStatus = ReadMediaStatusToken(mediaInfo, "status", "Status");
+        if (!string.IsNullOrEmpty(mediaStatus))
+        {
+            providerIds["JellyseerrMediaStatus"] = mediaStatus;
+        }
+
+        string? mediaStatus4k = ReadMediaStatusToken(mediaInfo, "status4k", "status4K", "Status4k", "Status4K");
+        if (!string.IsNullOrEmpty(mediaStatus4k))
+        {
+            providerIds["JellyseerrMediaStatus4k"] = mediaStatus4k;
+        }
 
         return new BaseItemDto
         {
@@ -587,16 +615,57 @@ public class DiscoveryService
             OriginalTitle = item.Value<string>("originalTitle") ?? item.Value<string>("originalName"),
             SourceType = mediaType,
             CommunityRating = rating > 0 ? rating : null,
-            ProviderIds = new Dictionary<string, string>
-            {
-                { "Jellyseerr", item.Value<int>("id").ToString() },
-                { "JellyseerrPoster", posterUrl },
-                { "JellyseerrBackdrop", backdropUrl },
-                { "TmdbPosterPath", posterPath },
-                { "TmdbBackdropPath", backdropPath },
-                { "Tmdb", tmdbId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty }
-            },
+            ProviderIds = providerIds,
             PremiereDate = DateTime.TryParse(dateTimeString, out DateTime dt) ? dt : DateTime.Parse("1970-01-01")
+        };
+    }
+
+    private static string? ReadMediaStatusToken(JObject? mediaInfo, params string[] keys)
+    {
+        if (mediaInfo == null)
+        {
+            return null;
+        }
+
+        foreach (string key in keys)
+        {
+            JToken? token = mediaInfo[key];
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                continue;
+            }
+
+            if (token.Type == JTokenType.Integer)
+            {
+                return token.Value<int>().ToString(CultureInfo.InvariantCulture);
+            }
+
+            string? raw = token.Value<string>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            return NormalizeMediaStatusName(raw) ?? raw.Trim();
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeMediaStatusName(string raw)
+    {
+        return raw.Trim().ToUpperInvariant() switch
+        {
+            "UNKNOWN" => "1",
+            "PENDING" => "2",
+            "PROCESSING" => "3",
+            "PARTIALLY_AVAILABLE" => "4",
+            "AVAILABLE" => "5",
+            "DELETED" => "6",
+            "BLACKLISTED" or "BLOCKED" or "BLOCKLISTED" => "7",
+            _ => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int numeric)
+                ? numeric.ToString(CultureInfo.InvariantCulture)
+                : null
         };
     }
 
