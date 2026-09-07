@@ -1,0 +1,160 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Plugin version, for example 1.0.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  JELLYFIN_VERSION: "10.11.2"
+  TARGET_ABI: "10.11.0.0"
+  CSPROJ: "src/Jellyfin.Plugin.JellySeerr/Jellyfin.Plugin.JellySeerr.csproj"
+  ASSEMBLY_INFO: "src/Jellyfin.Plugin.JellySeerr/Properties/AssemblyInfo.cs"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be four numbers, got: $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
+      - name: Update version in project files
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/<Version>[0-9.]*<\/Version>/<Version>${VERSION}<\/Version>/" "${{ env.CSPROJ }}"
+          sed -i "s/\[assembly: AssemblyVersion(\"[0-9.]*\")\]/[assembly: AssemblyVersion(\"${VERSION}\")]/" "${{ env.ASSEMBLY_INFO }}"
+          sed -i "s/\[assembly: AssemblyFileVersion(\"[0-9.]*\")\]/[assembly: AssemblyFileVersion(\"${VERSION}\")]/" "${{ env.ASSEMBLY_INFO }}"
+          jq --arg version "$VERSION" '.version = $version' meta.json > meta.json.tmp && mv meta.json.tmp meta.json
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Build plugin
+        run: |
+          dotnet build "${{ env.CSPROJ }}" --configuration Release -p:JellyfinVersion=${{ env.JELLYFIN_VERSION }}
+
+      - name: Package release zip
+        id: package
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OUT_DIR="${GITHUB_WORKSPACE}/src/Jellyfin.Plugin.JellySeerr/bin/Release/net9.0"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.0000000Z")
+          ZIP_NAME="Jellyfin.Plugin.JellySeerr_10.11.0.zip"
+          DIST_DIR="${GITHUB_WORKSPACE}/dist"
+          ZIP_PATH="${DIST_DIR}/${ZIP_NAME}"
+          CHANGELOG="Release ${VERSION}."
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg timestamp "$TIMESTAMP" \
+            --arg targetAbi "${{ env.TARGET_ABI }}" \
+            --arg changelog "$CHANGELOG" \
+            '{
+              category: "General",
+              changelog: $changelog,
+              description: "Discover and request movies and TV shows through Seerr, with curated quality profiles and full request management.",
+              guid: "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
+              name: "JellySeerr",
+              overview: "Jellyfin tabs for Seerr discovery and requests, plus admin controls for which quality profiles users can pick.",
+              owner: "ThuGie",
+              targetAbi: $targetAbi,
+              timestamp: $timestamp,
+              version: $version,
+              status: "Active",
+              autoUpdate: true,
+              assemblies: ["Jellyfin.Plugin.JellySeerr.dll"]
+            }' > "${OUT_DIR}/meta.json"
+
+          mkdir -p "${DIST_DIR}"
+          (
+            cd "${OUT_DIR}"
+            zip -j "${ZIP_PATH}" Jellyfin.Plugin.JellySeerr.dll meta.json thumb.png
+          )
+
+          CHECKSUM=$(md5sum "${ZIP_PATH}" | awk '{print toupper($1)}')
+          SOURCE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${ZIP_NAME}"
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "checksum=${CHECKSUM}" >> "$GITHUB_OUTPUT"
+          echo "source_url=${SOURCE_URL}" >> "$GITHUB_OUTPUT"
+          echo "timestamp=${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+          echo "changelog=${CHANGELOG}" >> "$GITHUB_OUTPUT"
+
+      - name: Update manifest.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          jq --arg version "$VERSION" \
+             --arg changelog "${{ steps.package.outputs.changelog }}" \
+             --arg targetAbi "${{ env.TARGET_ABI }}" \
+             --arg sourceUrl "${{ steps.package.outputs.source_url }}" \
+             --arg checksum "${{ steps.package.outputs.checksum }}" \
+             --arg timestamp "${{ steps.package.outputs.timestamp }}" \
+             '
+             .[0].versions = (
+               [
+                 {
+                   version: $version,
+                   changelog: $changelog,
+                   targetAbi: $targetAbi,
+                   sourceUrl: $sourceUrl,
+                   checksum: $checksum,
+                   timestamp: $timestamp,
+                   dependencies: []
+                 }
+               ]
+               + (.[0].versions | map(select(.version != $version)))
+             )
+             ' manifest.json > manifest.json.tmp
+          mv manifest.json.tmp manifest.json
+
+      - name: Commit version and manifest updates
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json meta.json "${{ env.CSPROJ }}" "${{ env.ASSEMBLY_INFO }}"
+          if git diff --staged --quiet; then
+            echo "No version file changes to commit"
+          else
+            git commit -m "chore: bump version to ${VERSION}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: JellySeerr ${{ steps.version.outputs.version }}
+          body: |
+            Install from Dashboard → Plugins → Repositories using:
+
+            `https://raw.githubusercontent.com/${{ github.repository }}/main/manifest.json`
+
+            Changelog: ${{ steps.package.outputs.changelog }}
+          files: dist/${{ steps.package.outputs.zip_name }}
+          fail_on_unmatched_files: true

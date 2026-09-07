@@ -1,0 +1,397 @@
+﻿.jellySeerr-movies-sections,
+.jellySeerr-tv-sections,
+.jellySeerr-requests-sections,
+.jellySeerr-search-section {
+    --jellySeerr-discover-backdrop-width: 20em;
+    --jellySeerr-discover-portrait-width: 13.333em;
+}
+
+.jellySeerr-box-card {
+    cursor: pointer;
+}
+
+.jellySeerr-box-card--logo .cardBox {
+    background: var(--cardBackground, rgba(255, 255, 255, 0.03));
+}
+
+.jellySeerr-box-card--logo .jellySeerr-discover-backdrop-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.jellySeerr-box-card .jellySeerr-box-logo,
+.jellySeerr-box-card .jellySeerr-box-logo-weird {
+    object-fit: contain;
+    pointer-events: none;
+    position: relative;
+    z-index: 1;
+    width: 200px;
+    max-height: 65px;
+}
+
+/* Some of the logos need to be sized differently bc of how they look */
+.jellySeerr-box-card .jellySeerr-box-logo-weird {
+    max-height: 95px;
+}
+
+.jellySeerr-empty-row {
+    padding: 0.5em 1.5em;
+    color: var(--secondaryTextColor);
+    font-style: italic;
+}
+
+.jellySeerr-loading-row {
+    padding: 1em 1.5em;
+    color: var(--secondaryTextColor);
+}
+
+.jellySeerr-skeleton-section {
+    margin-bottom: 1.5em;
+}
+
+.jellySeerr-skeleton-title {
+    height: 1.4em;
+    width: 12em;
+    max-width: 40%;
+    border-radius: 0.25em;
+    background: var(--cardBackground, rgba(255, 255, 255, 0.06));
+    position: relative;
+    overflow: hidden;
+}
+
+.jellySeerr-skeleton-track {
+    display: flex;
+    gap: 0;
+    overflow: hidden;
+    padding-top: 0.75em;
+}
+
+.jellySeerr-skeleton-card {
+    flex: 0 0 auto;
+    margin: 0 0.6em 0 0;
+    border-radius: 0.5em;
+    background: var(--cardBackground, rgba(255, 255, 255, 0.06));
+    position: relative;
+    overflow: hidden;
+}
+
+.jellySeerr-skeleton-card--poster {
+    width: var(--jellySeerr-discover-portrait-width);
+    aspect-ratio: 2 / 3;
+}
+
+.jellySeerr-skeleton-card--poster.jellySeerr-skeleton-card--backdrop {
+    width: var(--jellySeerr-discover-backdrop-width);
+    aspect-ratio: 16 / 9;
+}
+
+.jellySeerr-skeleton-card--carousel {
+    width: var(--jellySeerr-discover-backdrop-width);
+    aspect-ratio: 16 / 9;
+}
+
+.jellySeerr-skeleton-title::after,
+.jellySeerr-skeleton-card::after,
+.jellySeerr-native-skeleton-image::after,
+.jellySeerr-native-skeleton-text::after,
+.jellySeerr-card-thumb-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, #ffffff14 50%, transparent 100%);
+    animation: jellySeerr-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.cardPadder.jellySeerr-card-thumb-skeleton {
+    overflow: hidden;
+}
+
+[data-jellySeerr-native-card] .cardImageContainer.cardContent {
+    z-index: 1;
+}
+
+@keyframes jellySeerr-skeleton-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* native skeletons reusing Jellyfin overflowBackdropCard sizing */
+[data-jellySeerr-native-skeleton] .emby-scroller,
+[data-jellySeerr-native-skeleton] [is="emby-scroller"] {
+    overflow: hidden;
+}
+
+[data-jellySeerr-native-skeleton] .itemsContainer {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.jellySeerr-native-skeleton-image {
+    background-color: var(--cardBackground, #242424);
+    overflow: hidden;
+}
+
+.jellySeerr-native-skeleton-text {
+    display: inline-block;
+    position: relative;
+    overflow: hidden;
+    vertical-align: middle;
+    border-radius: 0.2em;
+    background: var(--cardBackground, rgba(255, 255, 255, 0.08));
+    height: 1em;
+    max-width: 100%;
+}
+
+.jellySeerr-native-skeleton-text--title {
+    width: 68%;
+    margin-top: 0.1em;
+}
+
+.jellySeerr-native-skeleton-text--meta {
+    width: 32%;
+    height: 0.85em;
+}
+
+[data-jellySeerr-skeleton-card]:nth-child(2n) .jellySeerr-native-skeleton-text--title {
+    width: 54%;
+}
+
+[data-jellySeerr-skeleton-card]:nth-child(3n) .jellySeerr-native-skeleton-text--title {
+    width: 78%;
+}
+
+[data-jellySeerr-skeleton-card]:nth-child(4n) .jellySeerr-native-skeleton-text--meta {
+    width: 40%;
+}
+
+.jellySeerr-section-fadein {
+    animation: jellySeerr-fadein 0.2s ease-out;
+}
+
+.jellySeerr-poster-section .sectionTitleContainer-cards {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75em;
+}
+
+.jellySeerr-search-section {
+    margin-bottom: 1.5em;
+}
+
+.jellySeerr-search-subtitle {
+    color: var(--secondaryTextColor);
+    font-size: 0.85em;
+}
+
+.jellySeerr-view-more {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: var(--secondaryTextColor, #999);
+    font-size: 0.85em;
+    font-weight: normal;
+    cursor: pointer;
+    white-space: nowrap;
+    opacity: 0.75;
+    transition: opacity 0.15s;
+}
+
+.jellySeerr-view-more:hover,
+.jellySeerr-view-more:focus {
+    opacity: 1;
+    color: var(--primaryTextColor, #ccc);
+}
+
+.jellySeerr-grid-view {
+    padding-top: 0.5em;
+    padding-bottom: 2em;
+}
+
+.jellySeerr-grid-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 1em;
+}
+
+.jellySeerr-grid-back {
+    flex-shrink: 0;
+}
+
+.jellySeerr-grid-title {
+    margin: 0;
+}
+
+.jellySeerr-grid-loadmore {
+    text-align: center;
+    padding: 1em 0 2em;
+}
+
+.jellySeerr-grid-status {
+    padding: 1em 1.5em;
+    color: var(--secondaryTextColor);
+    text-align: center;
+}
+
+@keyframes jellySeerr-fadein {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.jellySeerr-discover-card .cardImageContainer.lazy-image-fadein-fast {
+    opacity: 1;
+    animation: jellySeerr-fadein 0.1s;
+}
+
+.jellySeerr-discover-card--backdrop {
+    flex: 0 0 auto;
+    width: var(--jellySeerr-discover-backdrop-width);
+}
+
+.jellySeerr-poster-section .jellySeerr-discover-card:not(.jellySeerr-discover-card--backdrop),
+.jellySeerr-grid-view .jellySeerr-discover-card:not(.jellySeerr-discover-card--backdrop),
+.jellySeerr-search-section .jellySeerr-discover-card:not(.jellySeerr-discover-card--backdrop) {
+    width: var(--jellySeerr-discover-portrait-width);
+}
+
+.jellySeerr-grid-view .jellySeerr-discover-card--backdrop.jellySeerr-discover-card--grid {
+    width: 100%;
+    max-width: var(--jellySeerr-discover-backdrop-width);
+}
+
+.jellySeerr-discover-card--backdrop .jellySeerr-discover-backdrop-scalable {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5em;
+}
+
+.jellySeerr-discover-backdrop-padder {
+    padding-bottom: 56.25%;
+}
+
+.jellySeerr-discover-card--backdrop .jellySeerr-discover-backdrop-image {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: inherit;
+}
+
+.jellySeerr-discover-backdrop-media {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.jellySeerr-discover-overlay-title {
+    display: none;
+}
+
+.jellySeerr-discover-title-below {
+    display: none;
+}
+
+/* English backdrop: full image, title below */
+.jellySeerr-discover-card--backdrop.jellySeerr-discover-card--english .jellySeerr-discover-backdrop-media {
+    opacity: 1;
+    filter: none;
+}
+
+.jellySeerr-discover-card--backdrop.jellySeerr-discover-card--english .jellySeerr-discover-title-below {
+    display: block;
+}
+
+/* No English backdrop: genre dimmed image w/ title on image */
+.jellySeerr-discover-card--backdrop.jellySeerr-discover-card--fallback .jellySeerr-discover-backdrop-media {
+    opacity: 0.4;
+    filter: saturate(1.25) brightness(1.05);
+}
+
+.jellySeerr-discover-card--backdrop.jellySeerr-discover-card--fallback .jellySeerr-discover-overlay-title {
+    display: -webkit-box;
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    color: var(--primaryTextColor);
+    font-size: 1.1em;
+    font-weight: 600;
+    padding: 0 0.75em;
+    white-space: normal;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+}
+
+.jellySeerr-discover-card--backdrop .cardOverlayContainer {
+    border-radius: inherit;
+}
+
+.jellySeerr-grid-view .jellySeerr-discover-card--backdrop.jellySeerr-discover-card--grid {
+    width: 100%;
+    max-width: var(--jellySeerr-discover-backdrop-width);
+}
+
+.jellySeerr-carousel-section.emby-scroller-container > .emby-scrollbuttons,
+.jellySeerr-poster-section.emby-scroller-container > .emby-scrollbuttons {
+    top: 0;
+    transform: none;
+    min-height: 0;
+}
+
+.jellySeerr-carousel-section .itemsContainer > .card:first-child {
+    margin-left: 0;
+}
+
+/* ElegantFin fixes */
+html.jellySeerr-elegantfin .jellySeerr-movies-sections .jellySeerr-discover-card,
+html.jellySeerr-elegantfin .jellySeerr-tv-sections .jellySeerr-discover-card,
+html.jellySeerr-elegantfin .jellySeerr-search-section .jellySeerr-discover-card,
+html.jellySeerr-elegantfin .jellySeerr-movies-sections .jellySeerr-box-card,
+html.jellySeerr-elegantfin .jellySeerr-tv-sections .jellySeerr-box-card,
+html.jellySeerr-elegantfin .jellySeerr-grid-view .jellySeerr-discover-card,
+html.jellySeerr-elegantfin [data-jellySeerr-skeleton-card] {
+    padding: 0 !important;
+    flex: 0 0 auto !important;
+}
+
+html.jellySeerr-elegantfin .jellySeerr-discover-card--backdrop {
+    width: var(--jellySeerr-discover-backdrop-width) !important;
+}
+
+html.jellySeerr-elegantfin .jellySeerr-poster-section .jellySeerr-discover-card:not(.jellySeerr-discover-card--backdrop),
+html.jellySeerr-elegantfin .jellySeerr-grid-view .jellySeerr-discover-card:not(.jellySeerr-discover-card--backdrop),
+html.jellySeerr-elegantfin .jellySeerr-search-section .jellySeerr-discover-card:not(.jellySeerr-discover-card--backdrop) {
+    width: var(--jellySeerr-discover-portrait-width) !important;
+}
+
+html.jellySeerr-elegantfin .jellySeerr-grid-view .jellySeerr-discover-card--backdrop.jellySeerr-discover-card--grid {
+    width: 100% !important;
+    max-width: var(--jellySeerr-discover-backdrop-width) !important;
+}
+
+html.jellySeerr-elegantfin .jellySeerr-movies-sections > .verticalSection:not(:first-child),
+html.jellySeerr-elegantfin .jellySeerr-tv-sections > .verticalSection:not(:first-child) {
+    margin-top: 1em;
+}
+
+html.jellySeerr-elegantfin .jellySeerr-movies-sections .sectionTitleContainer-cards,
+html.jellySeerr-elegantfin .jellySeerr-tv-sections .sectionTitleContainer-cards {
+    margin: 0 !important;
+}
+
+html.jellySeerr-elegantfin .jellySeerr-movies-sections .sectionTitleContainer-cards .sectionTitle-cards,
+html.jellySeerr-elegantfin .jellySeerr-tv-sections .sectionTitleContainer-cards .sectionTitle-cards {
+    margin: 0 !important;
+    padding-top: 0 !important;
+}

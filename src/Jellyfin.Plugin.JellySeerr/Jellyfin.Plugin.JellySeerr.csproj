@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <JellyfinVersion>10.11.2</JellyfinVersion>
+        <JellyfinNugetVersion>10.11.2</JellyfinNugetVersion>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+        <Version>1.0.0.0</Version>
+        <RootNamespace>Jellyfin.Plugin.JellySeerr</RootNamespace>
+        <AssemblyName>Jellyfin.Plugin.JellySeerr</AssemblyName>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Jellyfin.Common" Version="$(JellyfinNugetVersion)">
+            <ExcludeAssets>runtime</ExcludeAssets>
+        </PackageReference>
+        <PackageReference Include="Jellyfin.Model" Version="$(JellyfinNugetVersion)">
+            <ExcludeAssets>runtime</ExcludeAssets>
+        </PackageReference>
+        <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinNugetVersion)">
+            <ExcludeAssets>runtime</ExcludeAssets>
+        </PackageReference>
+        <PackageReference Include="Jellyfin.Data" Version="$(JellyfinNugetVersion)">
+            <ExcludeAssets>runtime</ExcludeAssets>
+        </PackageReference>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Configuration\config.html" />
+        <EmbeddedResource Include="Inject\jellyseerr-nativeui.js" />
+        <EmbeddedResource Include="Inject\jellyseerr-tabs.js" />
+        <EmbeddedResource Include="Inject\jellyseerr-tabs.css" />
+        <EmbeddedResource Include="Inject\jellyseerr-modal.js" />
+        <EmbeddedResource Include="Inject\jellyseerr-modal.css" />
+        <EmbeddedResource Include="Inject\jellyseerr-requests.js" />
+        <EmbeddedResource Include="Inject\jellyseerr-requests.css" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\meta.json" Link="meta.json" CopyToOutputDirectory="Always" />
+        <None Include="..\..\thumb.png" Link="thumb.png" CopyToOutputDirectory="Always" />
+    </ItemGroup>
+
+</Project>

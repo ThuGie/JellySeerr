@@ -1,0 +1,17 @@
+{
+  "category": "General",
+  "changelog": "Initial public release.",
+  "description": "Discover and request movies and TV shows through Seerr, with curated quality profiles and full request management.",
+  "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
+  "name": "JellySeerr",
+  "overview": "Jellyfin tabs for Seerr discovery and requests, plus admin controls for which quality profiles users can pick.",
+  "owner": "ThuGie",
+  "targetAbi": "10.11.0.0",
+  "timestamp": "2026-09-07T00:00:00.0000000Z",
+  "version": "1.0.0.0",
+  "status": "Active",
+  "autoUpdate": true,
+  "assemblies": [
+    "Jellyfin.Plugin.JellySeerr.dll"
+  ]
+}
