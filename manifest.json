@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.7.0",
+        "changelog": "Fill Watchlist, Seerr, Report issue, and Unmonitor with real colors, and check Radarr/Sonarr in settings when they are filled in.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.7.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "A08054347DDA3C59D13BDD3B14A15951",
+        "timestamp": "2026-09-07T07:40:17.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.6.0",
         "changelog": "Give Watchlist, Open in Seerr, Report issue, and Unmonitor a visible outline so they still read as buttons.",
         "targetAbi": "10.11.0.0",
