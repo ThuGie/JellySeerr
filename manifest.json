@@ -2,8 +2,8 @@
   {
     "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
     "name": "JellySeerr",
-    "description": "Discover and request movies and TV shows through Seerr, with curated quality profiles and full request management.",
-    "overview": "Jellyfin tabs for Seerr discovery and requests, plus admin controls for which quality profiles users can pick.",
+    "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
+    "overview": "Browse Seerr and send requests from Jellyfin, with admin control over quality profiles.",
     "owner": "ThuGie",
     "category": "General",
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
