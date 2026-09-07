@@ -787,8 +787,53 @@ public sealed class ServarrProgressService
             return match;
         }
 
+        // Sonarr: ?tmdbId= is not a guaranteed filter. Resolve TVDB via lookup, then use documented ?tvdbId=.
+        if (string.Equals(resource, "series", StringComparison.OrdinalIgnoreCase))
+        {
+            match = await FindSeriesViaTmdbLookupAsync(client, tmdbId, cancellationToken).ConfigureAwait(false);
+            if (match != null)
+            {
+                return match;
+            }
+        }
+
         JArray? all = await GetJsonArrayAsync(client, resource, cancellationToken).ConfigureAwait(false);
         return all?.OfType<JObject>().FirstOrDefault(item => item.Value<int?>("tmdbId") == tmdbId);
+    }
+
+    /// <summary>
+    /// Uses Sonarr <c>series/lookup?term=tmdb:</c> to get TVDB, then <c>series?tvdbId=</c> for the in-library row.
+    /// Lookup alone is not enough (SkyHook results may not be monitored).
+    /// </summary>
+    private static async Task<JObject?> FindSeriesViaTmdbLookupAsync(HttpClient client, int tmdbId, CancellationToken cancellationToken)
+    {
+        JArray? lookups = await GetJsonArrayAsync(
+                client,
+                $"series/lookup?term={Uri.EscapeDataString("tmdb:" + tmdbId.ToString(CultureInfo.InvariantCulture))}",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (lookups == null || lookups.Count == 0)
+        {
+            return null;
+        }
+
+        JObject? hit = lookups.OfType<JObject>().FirstOrDefault(item => item.Value<int?>("tmdbId") == tmdbId)
+            ?? lookups.OfType<JObject>().FirstOrDefault();
+        int? tvdbId = hit?.Value<int?>("tvdbId");
+        if (tvdbId is null or <= 0)
+        {
+            return null;
+        }
+
+        JArray? byTvdb = await GetJsonArrayAsync(
+                client,
+                $"series?tvdbId={tvdbId.Value.ToString(CultureInfo.InvariantCulture)}",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return byTvdb?.OfType<JObject>().FirstOrDefault(item =>
+            item.Value<int?>("tvdbId") == tvdbId
+            || item.Value<int?>("tmdbId") == tmdbId);
     }
 
     private static async Task<bool> PutJsonAsync(HttpClient client, string path, JObject body, CancellationToken cancellationToken)

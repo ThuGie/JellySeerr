@@ -767,8 +767,9 @@
                     return ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/admin/test'), type: 'POST', dataType: 'json' });
                 }).then(function (result) {
                     msg(pick(result, 'message', 'Message') || (pick(result, 'ok', 'Ok') ? 'Connected.' : 'Failed.'));
+                    const seerr = pick(result, 'seerr', 'Seerr') || {};
                     renderChips({
-                        seerrConfigured: pick(result, 'ok', 'Ok') === true,
+                        seerrConfigured: pick(seerr, 'configured', 'Configured') === true,
                         radarrConfigured: pick(pick(result, 'radarr', 'Radarr') || {}, 'configured', 'Configured') === true,
                         sonarrConfigured: pick(pick(result, 'sonarr', 'Sonarr') || {}, 'configured', 'Configured') === true,
                         fileTransformation: pick(result, 'fileTransformation', 'FileTransformation') === true,
@@ -789,21 +790,27 @@
             });
 
             $('jsSyncQuality').addEventListener('click', function () {
-                ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/admin/sync-quality'), type: 'POST', dataType: 'json' })
-                    .then(function (profiles) {
-                        currentConfig.QualityProfiles = profiles;
-                        renderQuality(profiles);
-                        const enabled = (profiles || []).filter(function (p) { return p.Enabled !== false && p.enabled !== false; }).length;
-                        renderChips({
-                            seerrConfigured: true,
-                            fileTransformation: true,
-                            enabledProfiles: enabled,
-                            test: { ok: true }
-                        });
-                        loadHealth();
-                    }).catch(function () {
-                        Dashboard.alert('Could not sync quality profiles. Test the Seerr connection first.');
+                msg('Syncing quality profiles…');
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    collectConfig(config);
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function () {
+                    return ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/admin/sync-quality'), type: 'POST', dataType: 'json' });
+                }).then(function (profiles) {
+                    currentConfig.QualityProfiles = profiles;
+                    renderQuality(profiles);
+                    const enabled = (profiles || []).filter(function (p) { return p.Enabled !== false && p.enabled !== false; }).length;
+                    renderChips({
+                        seerrConfigured: true,
+                        fileTransformation: true,
+                        enabledProfiles: enabled,
+                        test: { ok: true }
                     });
+                    msg('Quality profiles synced.');
+                    loadHealth();
+                }).catch(function () {
+                    Dashboard.alert('Could not sync quality profiles. Test the Seerr connection first.');
+                });
             });
 
             $('jsRefreshUsers').addEventListener('click', loadUsers);

@@ -76,9 +76,13 @@ public class ConnectionService
             messages.Add(sonarr.Message);
         }
 
+        bool ok = seerr.Ok
+            && (!radarr.Configured || radarr.Ok)
+            && (!sonarr.Configured || sonarr.Ok);
+
         return new
         {
-            ok = seerr.Ok,
+            ok,
             message = string.Join(" ", messages),
             version = seerr.Version,
             fileTransformation = FileTransformationPresent(),

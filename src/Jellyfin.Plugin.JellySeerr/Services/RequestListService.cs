@@ -21,6 +21,7 @@ public class RequestListService
     private readonly ILogger<RequestListService> _logger;
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
+    private readonly UserMappingService _userMappingService;
     private readonly ServarrProgressService _servarrProgressService;
     private readonly QualityCatalogService _qualityCatalogService;
 
@@ -28,12 +29,14 @@ public class RequestListService
         ILogger<RequestListService> logger,
         ILibraryManager libraryManager,
         IUserManager userManager,
+        UserMappingService userMappingService,
         ServarrProgressService servarrProgressService,
         QualityCatalogService qualityCatalogService)
     {
         _logger = logger;
         _libraryManager = libraryManager;
         _userManager = userManager;
+        _userMappingService = userMappingService;
         _servarrProgressService = servarrProgressService;
         _qualityCatalogService = qualityCatalogService;
     }
@@ -75,14 +78,15 @@ public class RequestListService
             _ => string.Empty
         };
 
-        using HttpClient client = CreateClient(config);
-        int? jellyseerrUserId = await ResolveJellyseerrUserIdAsync(client, username, cancellationToken).ConfigureAwait(false);
-        if (jellyseerrUserId == null)
+        SeerrUserMatch? mappedUser = await _userMappingService.ResolveAsync(userId, username, cancellationToken).ConfigureAwait(false);
+        if (mappedUser == null || !mappedUser.Mapped)
         {
             return (404, "{\"error\":true,\"message\":\"Seerr user not linked.\"}");
         }
 
-        client.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId.ToString());
+        int jellyseerrUserId = mappedUser.Id;
+        using HttpClient client = CreateClient(config);
+        client.DefaultRequestHeaders.Add("X-Api-User", jellyseerrUserId.ToString(CultureInfo.InvariantCulture));
 
         string mineParam = allRequests ? string.Empty : $"&requestedBy={jellyseerrUserId}";
         string apiPath = $"/api/v1/request?take={take}&skip={skip}&sort=added&sortDirection=desc{filterParam}{mineParam}";
@@ -426,7 +430,8 @@ public class RequestListService
                 IncludeItemTypes = itemTypes,
                 HasAnyProviderId = new Dictionary<string, string>
                 {
-                    { "Tmdb", tmdbId.ToString(CultureInfo.InvariantCulture) }
+                    { "Tmdb", tmdbId.ToString(CultureInfo.InvariantCulture) },
+                    { "TheMovieDb", tmdbId.ToString(CultureInfo.InvariantCulture) }
                 },
                 Limit = 25
             };
@@ -530,32 +535,8 @@ public class RequestListService
             ? year
             : null;
 
-    private static string GetMediaStatusLabel(int? requestStatus, int? mediaStatus)
-    {
-        if (requestStatus == 4 && mediaStatus is not (4 or 5))
-        {
-            return "Failed";
-        }
-
-        return mediaStatus switch
-        {
-            7 => "Blocklisted",
-            6 => "Deleted",
-            5 => "Available",
-            4 => "Partially Available",
-            3 => "Processing",
-            2 => "Pending",
-            _ => requestStatus switch
-            {
-                5 => "Completed",
-                4 => "Failed",
-                3 => "Declined",
-                2 => "Approved",
-                1 => "Pending Approval",
-                _ => "Unknown"
-            }
-        };
-    }
+    private static string GetMediaStatusLabel(int? requestStatus, int? mediaStatus) =>
+        MediaStatusHelper.GetLabel(mediaStatus, requestStatus);
 
     private static HttpClient CreateClient(PluginConfiguration config)
     {
@@ -564,23 +545,4 @@ public class RequestListService
         return client;
     }
 
-    private static async Task<int?> ResolveJellyseerrUserIdAsync(
-        HttpClient client,
-        string username,
-        CancellationToken cancellationToken)
-    {
-        using HttpResponseMessage usersResponse = await client
-            .GetAsync($"/api/v1/user?q={Uri.EscapeDataString(username)}", cancellationToken)
-            .ConfigureAwait(false);
-        if (!usersResponse.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        string userResponseRaw = await usersResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return JObject.Parse(userResponseRaw).Value<JArray>("results")?
-            .OfType<JObject>()
-            .FirstOrDefault(x => string.Equals(x.Value<string>("jellyfinUsername"), username, StringComparison.OrdinalIgnoreCase))
-            ?.Value<int>("id");
-    }
 }

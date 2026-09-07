@@ -2109,16 +2109,18 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 return numeric;
             }
             const key = String(raw).trim().toUpperCase();
+            // Seerr MediaStatus — must match Helpers/MediaStatusHelper.cs and server/constants/media.ts
+            // Do NOT trust seerr-api.yml (still says 6=DELETED). 6=BLOCKLISTED, 7=DELETED.
             const map = {
                 UNKNOWN: 1,
                 PENDING: 2,
                 PROCESSING: 3,
                 PARTIALLY_AVAILABLE: 4,
                 AVAILABLE: 5,
-                DELETED: 6,
-                BLACKLISTED: 7,
-                BLOCKED: 7,
-                BLOCKLISTED: 7
+                BLOCKLISTED: 6,
+                BLACKLISTED: 6,
+                BLOCKED: 6,
+                DELETED: 7
             };
             return map[key] || null;
         },
@@ -2133,7 +2135,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 ? 'check'
                 : (status === 2 || status === 3
                     ? 'hourglass_empty'
-                    : (status === 7 ? 'block' : 'add'));
+                    : (status === 6 ? 'block' : 'add'));
             const statusAttr = status != null ? ` data-media-status="${status}"` : '';
             return `<button is="discover-requestbutton" type="button" class="discover-requestbutton cardOverlayButton cardOverlayButton-hover paper-icon-button-light emby-button" data-id="${mediaId}" data-media-type="${mediaType}"${statusAttr}>
                                 <span class="material-icons cardOverlayButtonIcon cardOverlayButtonIcon-hover" aria-hidden="true">${icon}</span>
@@ -2784,7 +2786,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 const mediaId = btn.getAttribute('data-id');
                 const mediaType = btn.getAttribute('data-media-type');
                 const status = parseInt(btn.getAttribute('data-media-status'), 10);
-                const openDetails = status === 2 || status === 3 || status === 5 || status === 7;
+                const openDetails = status === 2 || status === 3 || status === 5 || status === 6;
                 if (openDetails && window.jellySeerrModal && window.jellySeerrModal.open) {
                     window.jellySeerrModal.open(mediaId, mediaType);
                     return;

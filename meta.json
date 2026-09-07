@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Fix changing request quality (Seerr needs mediaType), and show SD / 720p / 1080p / 2K / 4K instead of a generic HD label.",
+  "changelog": "Fix issue reporting, cancel stubs, Requests user linking, and Arr deep-link gating; harden Sonarr TMDB lookup; add Seerr/Arr API docs.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-07T00:00:00.0000000Z",
-  "version": "1.0.8.0",
+  "version": "1.0.9.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

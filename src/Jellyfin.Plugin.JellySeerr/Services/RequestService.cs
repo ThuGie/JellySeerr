@@ -133,6 +133,12 @@ public class RequestService
             return (400, "{\"message\":\"A media type is required to change this request.\"}", "application/json");
         }
 
+        if (string.Equals(payload.MediaType, "tv", StringComparison.OrdinalIgnoreCase)
+            && (payload.Seasons == null || payload.Seasons.Count == 0))
+        {
+            return (400, "{\"message\":\"Missing seasons for this TV request update.\"}", "application/json");
+        }
+
         ApplyProfileDefaults(payload, JellySeerrPlugin.Instance.Configuration);
         if (payload.ServerId != null && payload.ProfileId != null &&
             !_quality.IsAllowed(payload.ServerId.Value, payload.ProfileId.Value, payload.MediaType, payload.Is4k))

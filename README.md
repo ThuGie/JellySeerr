@@ -71,6 +71,10 @@ dotnet build JellySeerr.sln -c Release
 
 Copy `Jellyfin.Plugin.JellySeerr.dll`, `meta.json`, and `thumb.png` into a Jellyfin plugins folder, then restart.
 
+## Developer docs
+
+Advanced integration reference (architecture, permissions, request/response field maps, audit) lives in [`doc/`](doc/README.md).
+
 ## Releasing
 
 Push a version tag such as `v1.0.1.0`. GitHub Actions builds the zip, updates `manifest.json` on `main`, and publishes a GitHub release.

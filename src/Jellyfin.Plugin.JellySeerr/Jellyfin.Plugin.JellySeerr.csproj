@@ -7,7 +7,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-        <Version>1.0.8.0</Version>
+        <Version>1.0.9.0</Version>
         <RootNamespace>Jellyfin.Plugin.JellySeerr</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellySeerr</AssemblyName>
     </PropertyGroup>

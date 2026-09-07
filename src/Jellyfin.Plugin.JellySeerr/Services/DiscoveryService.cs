@@ -434,7 +434,7 @@ public class DiscoveryService
         {
             JObject? details = GetMediaDetails(username, "movie", tmdbId);
             JObject? mediaInfo = details?.Value<JObject>("mediaInfo");
-            if (mediaInfo == null)
+            if (!HasActiveRequestOrTrackedMedia(mediaInfo))
             {
                 continue;
             }
@@ -554,7 +554,7 @@ public class DiscoveryService
             return null;
         }
 
-        if (filterOptions.HideRequestedMedia && item.Value<JObject>("mediaInfo") != null)
+        if (filterOptions.HideRequestedMedia && HasActiveRequestOrTrackedMedia(item.Value<JObject>("mediaInfo") ?? item.Value<JObject>("MediaInfo")))
         {
             return null;
         }
@@ -652,22 +652,8 @@ public class DiscoveryService
         return null;
     }
 
-    private static string? NormalizeMediaStatusName(string raw)
-    {
-        return raw.Trim().ToUpperInvariant() switch
-        {
-            "UNKNOWN" => "1",
-            "PENDING" => "2",
-            "PROCESSING" => "3",
-            "PARTIALLY_AVAILABLE" => "4",
-            "AVAILABLE" => "5",
-            "DELETED" => "6",
-            "BLACKLISTED" or "BLOCKED" or "BLOCKLISTED" => "7",
-            _ => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int numeric)
-                ? numeric.ToString(CultureInfo.InvariantCulture)
-                : null
-        };
-    }
+    private static string? NormalizeMediaStatusName(string raw) =>
+        MediaStatusHelper.NormalizeToCodeString(raw);
 
     private static HttpClient CreateClient(PluginConfiguration config)
     {
@@ -689,8 +675,64 @@ public class DiscoveryService
 
     private static bool IsAvailableInLibrary(JObject item)
     {
-        string? status = item.Value<JObject>("mediaInfo")?.Value<string>("status");
-        return string.Equals(status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "PARTIALLY_AVAILABLE", StringComparison.OrdinalIgnoreCase);
+        JObject? mediaInfo = item.Value<JObject>("mediaInfo") ?? item.Value<JObject>("MediaInfo");
+        int? status = ParseMediaStatusCode(mediaInfo, "status", "Status");
+        return status is 4 or 5;
+    }
+
+    /// <summary>
+    /// True when media is pending/processing/partial/available/blocklisted or has a live request.
+    /// Cancel stubs (UNKNOWN/DELETED with no requests) stay visible for re-request.
+    /// </summary>
+    private static bool HasActiveRequestOrTrackedMedia(JObject? mediaInfo)
+    {
+        if (mediaInfo == null)
+        {
+            return false;
+        }
+
+        int? status = ParseMediaStatusCode(mediaInfo, "status", "Status");
+        if (status is 2 or 3 or 4 or 5 or 6)
+        {
+            return true;
+        }
+
+        int? status4k = ParseMediaStatusCode(mediaInfo, "status4k", "status4K", "Status4k", "Status4K");
+        if (status4k is 2 or 3 or 4 or 5 or 6)
+        {
+            return true;
+        }
+
+        JArray? requests = mediaInfo.Value<JArray>("requests") ?? mediaInfo.Value<JArray>("Requests");
+        if (requests == null)
+        {
+            return false;
+        }
+
+        foreach (JObject request in requests.OfType<JObject>())
+        {
+            int? requestStatus = request.Value<int?>("status") ?? request.Value<int?>("Status");
+            // Pending / Approved / Failed still count as "already requested"
+            if (requestStatus is 1 or 2 or 4)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int? ParseMediaStatusCode(JObject? mediaInfo, params string[] keys)
+    {
+        string? token = ReadMediaStatusToken(mediaInfo, keys);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return null;
+        }
+
+        return int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out int code)
+            ? code
+            : null;
     }
 
     private static bool ShouldApplyReleaseTypeFilter(string? mediaTypeFilter, string jellyseerrPath, PluginConfiguration config) =>

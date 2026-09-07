@@ -459,15 +459,18 @@ window.jellySeerrLog = window.jellySeerrLog || {
             return raw;
         }
         const key = String(raw).trim().toUpperCase();
+        // Seerr MediaStatus — must match Helpers/MediaStatusHelper.cs and server/constants/media.ts
+        // Do NOT trust seerr-api.yml (still says 6=DELETED). 6=BLOCKLISTED, 7=DELETED.
         const map = {
             UNKNOWN: 1,
             PENDING: 2,
             PROCESSING: 3,
             PARTIALLY_AVAILABLE: 4,
             AVAILABLE: 5,
-            DELETED: 6,
-            BLACKLISTED: 7,
-            BLOCKED: 7
+            BLOCKLISTED: 6,
+            BLACKLISTED: 6,
+            BLOCKED: 6,
+            DELETED: 7
         };
         if (key in map) {
             return map[key];
@@ -523,7 +526,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         if (status === 5) {
             return { requested: true, label: 'Available' };
         }
-        if (status === 7) {
+        if (status === 6) {
             return { requested: true, label: 'Blocklisted' };
         }
         if (status === 4) {
@@ -1249,12 +1252,17 @@ window.jellySeerrLog = window.jellySeerrLog || {
             const isAvailable = status === 5;
             const isProcessing = status === 3;
             const isPending = status === 2;
+            const isBlocklisted = status === 6;
             const wasRequested = requested.indexOf(season.seasonNumber) !== -1;
-            const requestable = status === 4
+            const requestable = !isBlocklisted && (
+                status === 4
                 || (!isAvailable && !isProcessing && !isPending && !wasRequested)
-                || (allowRequested && wasRequested && !isAvailable);
+                || (allowRequested && wasRequested && !isAvailable)
+            );
             let badge = '';
-            if (isAvailable) {
+            if (isBlocklisted) {
+                badge = 'Blocklisted';
+            } else if (isAvailable) {
                 badge = 'Available';
             } else if (isProcessing && !allowRequested) {
                 badge = 'Processing';
@@ -1947,9 +1955,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                 ${browseUrl && tmdbId
                                                     ? `<button type="button" class="bst-btn-ghost" data-action="open-seerr">Open in Seerr</button>`
                                                     : ''}
-                                                ${data.mediaInfo || data.media_info || requestState.requested
-                                                    ? `<button type="button" class="bst-btn-ghost" data-action="issue">Report issue</button>`
-                                                    : ''}
+                                                ${(function () {
+                                                    const info = data.mediaInfo || data.media_info || {};
+                                                    const seerrId = info.id || info.Id;
+                                                    return Number.isFinite(Number(seerrId)) && Number(seerrId) > 0
+                                                        ? `<button type="button" class="bst-btn-ghost" data-action="issue" data-seerr-media-id="${escapeHtml(String(seerrId))}">Report issue</button>`
+                                                        : '';
+                                                })()}
                                                 ${renderRequestLifecycleButtons(data, mediaType)}
                                             </div>
                                         </div>
@@ -2154,6 +2166,10 @@ window.jellySeerrLog = window.jellySeerrLog || {
                             return unmonitorResult.unmonitorMsg
                                 ? 'Request cancelled. Could not unmonitor: ' + unmonitorResult.unmonitorMsg
                                 : 'Request cancelled.';
+                        }).catch(function (cancelErr) {
+                            cancelErr.unmonitored = unmonitorResult.unmonitored;
+                            cancelErr.unmonitorMsg = unmonitorResult.unmonitorMsg;
+                            return Promise.reject(cancelErr);
                         });
                     })
                     : ApiClient.ajax({ url: url, type: method }).then(function () {
@@ -2176,6 +2192,10 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     log.error('request action failed', err);
                     btn.disabled = false;
                     const status = err && err.status;
+                    if (action === 'cancel-request' && err && err.unmonitored) {
+                        notifyUser('Monitoring was stopped in Radarr/Sonarr, but Seerr could not cancel the request. Try cancel again or cancel in Seerr.');
+                        return;
+                    }
                     if (action === 'cancel-request' && (status === 403 || status === 404)) {
                         notifyUser('Seerr could not cancel this request. If it is already approved, use Unmonitor instead.');
                         return;
@@ -2213,8 +2233,11 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 if (!message) {
                     return;
                 }
-                const mediaInfo = data.mediaInfo || data.media_info || {};
-                const seerrMediaId = mediaInfo.id || mediaInfo.Id || mediaId;
+                const seerrMediaId = parseInt(issueBtn.getAttribute('data-seerr-media-id') || '', 10);
+                if (!Number.isFinite(seerrMediaId) || seerrMediaId <= 0) {
+                    notifyUser('No Seerr media record yet. Request this title before reporting an issue.');
+                    return;
+                }
                 ApiClient.ajax({
                     url: ApiClient.getUrl('JellySeerr/issue'),
                     type: 'POST',

@@ -482,9 +482,10 @@ public class JellySeerrController : ControllerBase
         SeerrUserMatch? match = await _userMappingService.ResolveAsync(userId, username, cancellationToken).ConfigureAwait(false);
         bool allowAll = all && match != null && UserMappingService.HasManageRequests(match.Permissions)
             && JellySeerrPlugin.Instance.Configuration.EnableManagerTools;
+        bool includeLocalServiceUrls = IsAdministrator(userManager, userId, match) && CanOpenLocalServices();
 
         (int statusCode, string body) = await _requestListService
-            .GetRequestsAsync(userId, username, take, skip, filter, allowAll, CanOpenLocalServices(), cancellationToken)
+            .GetRequestsAsync(userId, username, take, skip, filter, allowAll, includeLocalServiceUrls, cancellationToken)
             .ConfigureAwait(false);
         return new ContentResult { StatusCode = statusCode, Content = body, ContentType = "application/json" };
     }
