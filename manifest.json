@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.3.0",
+        "changelog": "Keep Movies, TV, and Requests on the home tab bar after back navigation.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.3.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "874AE34534F91C9A235C81A87819A9B0",
+        "timestamp": "2026-09-07T05:54:05.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.2.0",
         "changelog": "Hide Seerr and *arr links from remote users. Request and discover cards now show play, status, quota, and season state.",
         "targetAbi": "10.11.0.0",
