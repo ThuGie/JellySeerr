@@ -31,7 +31,9 @@ public class StartupService : IScheduledTask
 
         var fileTransformationAssembly = AssemblyLoadContext.All
             .SelectMany(x => x.Assemblies)
-            .FirstOrDefault(x => x.FullName?.Contains(".FileTransformation", StringComparison.Ordinal) ?? false);
+            .FirstOrDefault(x =>
+                (x.GetName().Name ?? x.FullName ?? string.Empty)
+                    .Contains("FileTransformation", StringComparison.OrdinalIgnoreCase));
 
         if (fileTransformationAssembly == null)
         {

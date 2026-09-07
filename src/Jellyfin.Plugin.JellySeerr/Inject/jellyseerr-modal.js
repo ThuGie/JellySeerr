@@ -30,6 +30,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     let activeSeasonRoot = null;
     let activeQualityRoot = null;
     let escapeHandler = null;
+    let pendingRequestContext = null;
 
     function escapeHtml(text) {
         const div = document.createElement('div');
@@ -81,7 +82,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return ApiClient.getUrl(url);
     }
 
-    const PLUGIN_ID = 'c8e4f2a1-9b3d-4e7f-a6c2-1d5e8f0a3b7c';
+    const PLUGIN_ID = '8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44';
+    let clientSettingsCache = {};
 
     function getLogoImageUrl(data) {
         const rawPath = data && (data.logoPath || data.logo_path);
@@ -373,6 +375,132 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return { requested: true, label: labels[status] || 'Already requested' };
     }
 
+    function pickVal(obj) {
+        if (!obj) {
+            return undefined;
+        }
+        for (let i = 1; i < arguments.length; i++) {
+            if (obj[arguments[i]] !== undefined) {
+                return obj[arguments[i]];
+            }
+        }
+        return undefined;
+    }
+
+    function getRequestRecords(data) {
+        const info = (data && (data.mediaInfo || data.media_info)) || {};
+        const list = info.requests || info.Requests || [];
+        return Array.isArray(list) ? list : [];
+    }
+
+    function requestIdOf(req) {
+        return req && (req.id || req.Id);
+    }
+
+    function requestStatusOf(req) {
+        return Number(req && (req.status != null ? req.status : req.Status));
+    }
+
+    function requestIs4k(req) {
+        return !!(req && (req.is4k || req.Is4k));
+    }
+
+    function getPendingRequests(data) {
+        const fromSeerr = getRequestRecords(data).filter(function (req) {
+            return requestStatusOf(req) === 1 && requestIdOf(req);
+        });
+        if (fromSeerr.length) {
+            return fromSeerr;
+        }
+        if (pendingRequestContext && pendingRequestContext.isPending && pendingRequestContext.requestId) {
+            return [{
+                id: pendingRequestContext.requestId,
+                status: 1,
+                is4k: pendingRequestContext.is4k === true
+            }];
+        }
+        return [];
+    }
+
+    function getFailedRequests(data) {
+        const fromSeerr = getRequestRecords(data).filter(function (req) {
+            return requestStatusOf(req) === 4 && requestIdOf(req);
+        });
+        if (fromSeerr.length) {
+            return fromSeerr;
+        }
+        if (pendingRequestContext && pendingRequestContext.isFailed && pendingRequestContext.requestId) {
+            return [{
+                id: pendingRequestContext.requestId,
+                status: 4,
+                is4k: pendingRequestContext.is4k === true
+            }];
+        }
+        return [];
+    }
+
+    function isOnWatchlist(data) {
+        if (!data) {
+            return false;
+        }
+        if (data.onWatchlist === true || data.OnWatchlist === true) {
+            return true;
+        }
+        const info = data.mediaInfo || data.media_info || {};
+        if (info.onWatchlist === true || info.OnWatchlist === true) {
+            return true;
+        }
+        const lists = info.watchlists || info.watchLists || info.Watchlists || data.watchlists;
+        return Array.isArray(lists) && lists.length > 0;
+    }
+
+    function canManageRequests() {
+        return pickVal(clientSettingsCache, 'canManageRequests', 'CanManageRequests') === true;
+    }
+
+    function shouldConfirmCancel() {
+        return pickVal(clientSettingsCache, 'confirmCancel', 'ConfirmCancel') !== false;
+    }
+
+    function renderRequestLifecycleButtons(data) {
+        const pending = getPendingRequests(data);
+        const failed = getFailedRequests(data);
+        const manage = canManageRequests();
+        const parts = [];
+
+        pending.forEach(function (req) {
+            const id = requestIdOf(req);
+            const fourK = requestIs4k(req);
+            parts.push(`<button type="button" class="bst-btn-danger" data-action="cancel-request" data-request-id="${id}">${fourK ? 'Cancel 4K request' : 'Cancel request'}</button>`);
+            if (manage) {
+                parts.push(`<button type="button" class="bst-btn-success" data-action="approve-request" data-request-id="${id}">${fourK ? 'Approve 4K' : 'Approve'}</button>`);
+                parts.push(`<button type="button" class="bst-btn-trailer" data-action="decline-request" data-request-id="${id}">${fourK ? 'Decline 4K' : 'Decline'}</button>`);
+            }
+        });
+
+        failed.forEach(function (req) {
+            const id = requestIdOf(req);
+            parts.push(`<button type="button" class="bst-btn-trailer" data-action="retry-request" data-request-id="${id}">${requestIs4k(req) ? 'Retry 4K' : 'Retry request'}</button>`);
+        });
+
+        return parts.join('');
+    }
+
+    function reloadDetailsModal(mediaId, mediaType) {
+        return loadModalDetails(mediaId, mediaType).then(function (data) {
+            const dom = buildDetailsDom(data, mediaId, mediaType);
+            if (activeDetailsRoot) {
+                activeDetailsRoot.replaceWith(dom);
+                activeDetailsRoot = dom;
+            }
+            if (typeof window.__jellySeerrRequestsEnsureMounted === 'function') {
+                window.__jellySeerrRequestsEnsureMounted({ tabShown: true });
+            }
+        }).catch(function (err) {
+            log.error('details reload failed', err);
+        });
+    }
+
     function markRequestButton(is4k, label) {
         if (!activeDetailsRoot) {
             return;
@@ -436,10 +564,17 @@ window.jellySeerrLog = window.jellySeerrLog || {
             url: ApiClient.getUrl('JellySeerr/client-settings'),
             type: 'GET',
             dataType: 'json'
+        }).then(function (config) {
+            clientSettingsCache = config || {};
+            return clientSettingsCache;
         }).catch(function (err) {
             log.warn('client settings fetch failed. falling back to plugin config', err);
-            return ApiClient.getPluginConfiguration(PLUGIN_ID).catch(function (configErr) {
+            return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
+                clientSettingsCache = config || {};
+                return clientSettingsCache;
+            }).catch(function (configErr) {
                 log.warn('plugin config fetch failed', configErr);
+                clientSettingsCache = {};
                 return {};
             });
         });
@@ -583,6 +718,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function closeDetailsModal() {
+        pendingRequestContext = null;
         closeQualityModal();
         closeSeasonModal();
         if (activeDetailsRoot) {
@@ -1136,10 +1272,11 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                 ${trailerKey
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="trailer" data-trailer-key="${escapeHtml(trailerKey)}">Trailer</button>`
                                                     : ''}
-                                                <button type="button" class="bst-btn-trailer" data-action="watchlist">Watchlist</button>
+                                                <button type="button" class="bst-btn-trailer" data-action="watchlist" data-watchlisted="${isOnWatchlist(data) ? 'true' : 'false'}">${isOnWatchlist(data) ? 'Remove from watchlist' : 'Watchlist'}</button>
                                                 ${requestState.requested
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="issue">Report issue</button>`
                                                     : ''}
+                                                ${renderRequestLifecycleButtons(data)}
                                             </div>
                                         </div>
                                         <div class="bst-details-layout">
@@ -1225,18 +1362,72 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const watchlistBtn = root.querySelector('[data-action="watchlist"]');
         if (watchlistBtn) {
             watchlistBtn.addEventListener('click', function () {
-                ApiClient.ajax({
-                    url: ApiClient.getUrl('JellySeerr/watchlist'),
-                    type: 'POST',
-                    data: JSON.stringify({ MediaType: mediaType, MediaId: mediaId }),
-                    contentType: 'application/json'
-                }).then(function () {
-                    notifyUser('Added to Seerr watchlist');
+                const listed = watchlistBtn.getAttribute('data-watchlisted') === 'true';
+                const req = listed
+                    ? {
+                        url: ApiClient.getUrl('JellySeerr/watchlist/' + mediaId, { mediaType: mediaType }),
+                        type: 'DELETE'
+                    }
+                    : {
+                        url: ApiClient.getUrl('JellySeerr/watchlist'),
+                        type: 'POST',
+                        data: JSON.stringify({ MediaType: mediaType, MediaId: mediaId }),
+                        contentType: 'application/json'
+                    };
+                ApiClient.ajax(req).then(function () {
+                    watchlistBtn.setAttribute('data-watchlisted', listed ? 'false' : 'true');
+                    watchlistBtn.textContent = listed ? 'Watchlist' : 'Remove from watchlist';
+                    notifyUser(listed ? 'Removed from Seerr watchlist' : 'Added to Seerr watchlist');
                 }).catch(function () {
-                    notifyUser('Could not add to watchlist');
+                    notifyUser(listed ? 'Could not remove from watchlist' : 'Could not add to watchlist');
                 });
             });
         }
+
+        root.querySelectorAll('[data-action="cancel-request"], [data-action="approve-request"], [data-action="decline-request"], [data-action="retry-request"]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const action = btn.getAttribute('data-action');
+                const requestId = btn.getAttribute('data-request-id');
+                if (!requestId) {
+                    return;
+                }
+                if (action === 'cancel-request' && shouldConfirmCancel() && !window.confirm('Cancel this request?')) {
+                    return;
+                }
+                let url;
+                let method = 'POST';
+                if (action === 'cancel-request') {
+                    url = ApiClient.getUrl('JellySeerr/request/' + requestId);
+                    method = 'DELETE';
+                } else if (action === 'approve-request') {
+                    url = ApiClient.getUrl('JellySeerr/request/' + requestId + '/approve');
+                } else if (action === 'decline-request') {
+                    url = ApiClient.getUrl('JellySeerr/request/' + requestId + '/decline');
+                } else if (action === 'retry-request') {
+                    url = ApiClient.getUrl('JellySeerr/request/' + requestId + '/retry');
+                }
+                if (!url) {
+                    return;
+                }
+                btn.disabled = true;
+                ApiClient.ajax({ url: url, type: method }).then(function () {
+                    if (pendingRequestContext) {
+                        if (action === 'cancel-request' || action === 'approve-request' || action === 'decline-request') {
+                            pendingRequestContext.isPending = false;
+                        }
+                        if (action === 'retry-request') {
+                            pendingRequestContext.isFailed = false;
+                        }
+                    }
+                    notifyUser(action === 'cancel-request' ? 'Request cancelled' : 'Updated request');
+                    return reloadDetailsModal(mediaId, mediaType);
+                }).catch(function (err) {
+                    log.error('request action failed', err);
+                    btn.disabled = false;
+                    notifyUser('That request action failed.');
+                });
+            });
+        });
 
         const issueBtn = root.querySelector('[data-action="issue"]');
         if (issueBtn) {
@@ -1296,8 +1487,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
             </div>`;
     }
 
-    function openDetailsModal(mediaId, mediaType) {
+    function openDetailsModal(mediaId, mediaType, context) {
         closeDetailsModal();
+        pendingRequestContext = context && context.requestId ? context : null;
         log.info('opening details modal for ' + mediaType + '/' + mediaId);
 
         document.body.insertAdjacentHTML('beforeend', renderDetailsLoading());

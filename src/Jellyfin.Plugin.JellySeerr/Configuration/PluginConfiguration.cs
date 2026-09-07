@@ -31,6 +31,12 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public int MaxImageCacheEntries { get; set; } = 5000;
 
+    public int DiscoveryCacheSeconds { get; set; } = 180;
+
+    public int RequestsCacheSeconds { get; set; } = 20;
+
+    public int ServarrCacheSeconds { get; set; } = 120;
+
     public bool DeveloperMode { get; set; }
 
     public int CacheBustCounter { get; set; }

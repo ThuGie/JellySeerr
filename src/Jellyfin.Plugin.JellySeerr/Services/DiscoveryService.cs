@@ -184,15 +184,11 @@ public class DiscoveryService
                     string path = jellyseerrPath.Contains('?', StringComparison.Ordinal)
                         ? $"{jellyseerrPath}&page={jellyseerrPage}"
                         : $"{jellyseerrPath}?page={jellyseerrPage}";
-
-                    HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
-                    if (!response.IsSuccessStatusCode)
+                    json = FetchCachedSeerrPage(client, path, $"discover:{username}:{path}");
+                    if (json == null)
                     {
                         break;
                     }
-
-                    string jsonRaw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    json = JObject.Parse(jsonRaw);
                 }
 
                 if (json == null)
@@ -925,6 +921,30 @@ public class DiscoveryService
         public bool HideRequestedMedia { get; init; }
 
         public bool HideAvailableInLibrary { get; init; }
+    }
+
+    private static JObject? FetchCachedSeerrPage(HttpClient client, string path, string cacheKey)
+    {
+        int ttlSeconds = Math.Clamp(JellySeerrPlugin.Instance.Configuration.DiscoveryCacheSeconds, 0, 3600);
+        if (ttlSeconds > 0 && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JObject cachedPage)
+        {
+            return cachedPage;
+        }
+
+        HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        string jsonRaw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        JObject json = JObject.Parse(jsonRaw);
+        if (ttlSeconds > 0)
+        {
+            JsonMemoryCache.Set(cacheKey, json, TimeSpan.FromSeconds(ttlSeconds));
+        }
+
+        return json;
     }
 
     private static QueryResult<BaseItemDto> EmptyResult() => new()

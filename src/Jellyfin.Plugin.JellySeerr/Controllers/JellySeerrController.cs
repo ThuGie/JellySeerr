@@ -106,8 +106,8 @@ public class JellySeerrController : ControllerBase
 
     [HttpGet("admin/health")]
     [Authorize(Roles = "Administrator")]
-    public async Task<ActionResult> GetHealth([FromServices] IUserManager userManager, CancellationToken cancellationToken) =>
-        Ok(await _connectionService.GetHealthAsync(userManager, cancellationToken).ConfigureAwait(false));
+    public async Task<ActionResult> GetHealth(CancellationToken cancellationToken) =>
+        Ok(await _connectionService.GetHealthAsync(cancellationToken).ConfigureAwait(false));
 
     [HttpPost("admin/test")]
     [Authorize(Roles = "Administrator")]
@@ -339,18 +339,28 @@ public class JellySeerrController : ControllerBase
 
     [HttpGet("client-settings")]
     [Authorize]
-    public ActionResult GetClientSettings()
+    public async Task<ActionResult> GetClientSettings([FromServices] IUserManager userManager, CancellationToken cancellationToken)
     {
         PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
         string? browseUrl = string.IsNullOrWhiteSpace(config.ExternalJellyseerrUrl)
             ? config.JellyseerrUrl
             : config.ExternalJellyseerrUrl;
+        Guid userId = GetUserId();
+        string? username = GetUsername(userManager);
+        SeerrUserMatch? match = userId == Guid.Empty || string.IsNullOrWhiteSpace(username)
+            ? null
+            : await _userMappingService.ResolveAsync(userId, username, cancellationToken).ConfigureAwait(false);
+
         return Ok(new
         {
             tmdbApiKey = config.TmdbApiKey?.Trim() ?? string.Empty,
             jellyseerrBrowseUrl = browseUrl?.Trim() ?? string.Empty,
             radarrUrl = ServarrUrl(config.RadarrUrl, config.RadarrApiKey),
-            sonarrUrl = ServarrUrl(config.SonarrUrl, config.SonarrApiKey)
+            sonarrUrl = ServarrUrl(config.SonarrUrl, config.SonarrApiKey),
+            confirmCancel = config.ConfirmCancel,
+            enableManagerTools = config.EnableManagerTools,
+            canManageRequests = match != null && UserMappingService.HasManageRequests(match.Permissions) && config.EnableManagerTools,
+            seerrUserId = match?.Id ?? 0
         });
     }
 

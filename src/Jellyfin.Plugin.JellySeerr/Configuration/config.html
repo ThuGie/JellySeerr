@@ -2,13 +2,14 @@
     <div data-role="content">
         <div class="content-primary">
             <form class="jellySeerrConfigurationForm">
-                <div class="verticalSection">
-                    <div class="sectionTitleContainer">
-                        <h2 class="sectionTitle">JellySeerr</h2>
+                <header class="jellySeerr-hero">
+                    <div>
+                        <p class="jellySeerr-kicker">Jellyfin plugin</p>
+                        <h1 class="jellySeerr-title">JellySeerr</h1>
+                        <p class="jellySeerr-lede">Discover, request, and manage Seerr titles from Jellyfin. Quality, users, and refresh live in the tabs below.</p>
                     </div>
-                    <p>Discover and request movies and TV shows through Seerr, with the quality profiles you choose to offer.</p>
                     <div id="jsStatusChips" class="jellySeerr-chips"></div>
-                </div>
+                </header>
 
                 <div class="jellySeerr-tabs" role="tablist">
                     <button type="button" class="jellySeerr-tab is-active" data-tab="setup">Setup</button>
@@ -20,105 +21,178 @@
                 </div>
 
                 <section class="jellySeerr-panel is-active" data-panel="setup">
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="jellyseerrUrl" label="Seerr URL" />
-                        <div class="fieldDescription">Internal URL Jellyfin uses to reach Seerr, for example http://seerr:5055</div>
+                    <div class="jellySeerr-grid">
+                        <article class="jellySeerr-card">
+                            <h3 class="jellySeerr-card-title">Seerr</h3>
+                            <p class="jellySeerr-card-copy">Jellyfin uses the internal URL. The external URL is only for “Open in Seerr” links.</p>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="jellyseerrUrl" label="Seerr URL" />
+                                <div class="fieldDescription">Example: http://seerr:5055</div>
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="externalJellyseerrUrl" label="External Seerr URL" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="password" id="jellyseerrApiKey" label="Seerr API key" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="tmdbApiKey" label="TMDB API key" />
+                            </div>
+                            <div class="jellySeerr-actions">
+                                <button is="emby-button" type="button" class="raised button-submit" id="jsTestConnection">Test connection</button>
+                                <button is="emby-button" type="button" class="raised" id="jsImportSeerrFin">Import from SeerrFin</button>
+                            </div>
+                            <p id="jsSetupMessage" class="fieldDescription"></p>
+                        </article>
+                        <article class="jellySeerr-card">
+                            <h3 class="jellySeerr-card-title">Download progress</h3>
+                            <p class="jellySeerr-card-copy">Optional. Used only to show Radarr/Sonarr progress and file size on Requests.</p>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="radarrUrl" label="Radarr URL" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="password" id="radarrApiKey" label="Radarr API key" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="sonarrUrl" label="Sonarr URL" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="password" id="sonarrApiKey" label="Sonarr API key" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="jellyseerrPreferredLanguages" label="Preferred languages" />
+                            </div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="text" id="watchRegion" label="Watch region" />
+                            </div>
+                        </article>
                     </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="externalJellyseerrUrl" label="External Seerr URL (optional)" />
-                        <div class="fieldDescription">Used for “Open in Seerr” links in the browser.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="password" id="jellyseerrApiKey" label="Seerr API key" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="tmdbApiKey" label="TMDB API key (optional)" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="radarrUrl" label="Radarr URL (optional, download progress)" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="password" id="radarrApiKey" label="Radarr API key" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="sonarrUrl" label="Sonarr URL (optional, download progress)" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="password" id="sonarrApiKey" label="Sonarr API key" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="jellyseerrPreferredLanguages" label="Preferred languages" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="watchRegion" label="Watch region" />
-                    </div>
-                    <button is="emby-button" type="button" class="raised button-submit" id="jsTestConnection">Test connection</button>
-                    <button is="emby-button" type="button" class="raised" id="jsImportSeerrFin">Import from SeerrFin</button>
-                    <p id="jsSetupMessage" class="fieldDescription"></p>
                 </section>
 
                 <section class="jellySeerr-panel" data-panel="quality">
-                    <p>Sync quality profiles from Seerr, then enable only the ones users should see. Disabled profiles cannot be requested.</p>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label><input is="emby-checkbox" type="checkbox" id="exposeProfilesToEveryone" /> <span>Let everyone pick from the enabled list</span></label>
-                        <div class="fieldDescription">If off, users without Seerr Advanced Requests still get your default profile.</div>
-                    </div>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label><input is="emby-checkbox" type="checkbox" id="disable4k" /> <span>Disable 4K requests in JellySeerr</span></label>
-                    </div>
-                    <button is="emby-button" type="button" class="raised button-submit" id="jsSyncQuality">Sync from Seerr</button>
-                    <div id="jsQualityTable" class="jellySeerr-quality-table"></div>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Offered qualities</h3>
+                        <p class="jellySeerr-card-copy">Sync from Seerr, then uncheck anything you do not want offered. Disabled profiles cannot be requested from JellySeerr.</p>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label><input is="emby-checkbox" type="checkbox" id="exposeProfilesToEveryone" /> <span>Let everyone pick from the enabled list</span></label>
+                            <div class="fieldDescription">If off, users without Seerr Advanced Requests skip the picker and get the fallback below.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label><input is="emby-checkbox" type="checkbox" id="disable4k" /> <span>Disable 4K requests in JellySeerr</span></label>
+                        </div>
+                        <button is="emby-button" type="button" class="raised button-submit" id="jsSyncQuality">Sync from Seerr</button>
+                        <div id="jsQualityTable" class="jellySeerr-quality-table"></div>
+                    </article>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Fallback if the user does not pick</h3>
+                        <p class="jellySeerr-card-copy">Used when a request is submitted without choosing a profile. Leave these on Seerr default unless you want a specific fallback.</p>
+                        <div id="jsQualityDefaults"></div>
+                    </article>
                 </section>
 
                 <section class="jellySeerr-panel" data-panel="display">
-                    <div id="jsTabCards"></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="addSeerrResultsInSearch" /> <span>Add Seerr results to Jellyfin search</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="discoverUsePosters" /> <span>Use posters in discovery rows</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="nativeCarousels" /> <span>Native Jellyfin carousel style</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="nativeGridPages" /> <span>Native grid pages</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="nativeSearchResults" /> <span>Native search result cards</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="qualityRecommendations" /> <span>Show JustWatch quality hints</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="streamingServiceUseImages" /> <span>Streaming service images</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="studioNetworkUseImages" /> <span>Studio and network images</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="genreUseBackdrops" /> <span>Genre backdrops</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="elegantFinFixes" /> <span>ElegantFin theme fixes</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="hideRequested" /> <span>Hide already requested titles</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="hideAvailable" /> <span>Hide titles already in the library</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="hideAdult" /> <span>Hide adult content</span></label></div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="number" id="rowItemLimit" label="Items per discovery row" />
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Library tabs</h3>
+                        <p class="jellySeerr-card-copy">Turn tabs on or off and rename them. These appear next to Home in Jellyfin.</p>
+                        <div id="jsTabCards"></div>
+                    </article>
+                    <div class="jellySeerr-grid">
+                        <article class="jellySeerr-card">
+                            <h3 class="jellySeerr-card-title">Look</h3>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="addSeerrResultsInSearch" /> <span>Add Seerr results to Jellyfin search</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="discoverUsePosters" /> <span>Use posters in discovery rows</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="nativeCarousels" /> <span>Native Jellyfin carousel style</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="nativeGridPages" /> <span>Native grid pages</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="nativeSearchResults" /> <span>Native search result cards</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="elegantFinFixes" /> <span>ElegantFin theme fixes</span></label></div>
+                        </article>
+                        <article class="jellySeerr-card">
+                            <h3 class="jellySeerr-card-title">Discovery</h3>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="qualityRecommendations" /> <span>Show JustWatch quality hints</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="streamingServiceUseImages" /> <span>Streaming service images</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="studioNetworkUseImages" /> <span>Studio and network images</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="genreUseBackdrops" /> <span>Genre backdrops</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="hideRequested" /> <span>Hide already requested titles</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="hideAvailable" /> <span>Hide titles already in the library</span></label></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="hideAdult" /> <span>Hide adult content</span></label></div>
+                            <div class="inputContainer">
+                                <input is="emby-input" type="number" id="rowItemLimit" label="Items per discovery row" />
+                            </div>
+                        </article>
                     </div>
                 </section>
 
                 <section class="jellySeerr-panel" data-panel="requests">
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="confirmCancel" /> <span>Confirm before cancelling a request</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="showQuotaWarnings" /> <span>Show quota remaining</span></label></div>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="enableManagerTools" /> <span>Enable approve / decline / all-requests for managers</span></label></div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="number" id="autoRefreshInterval" label="Requests auto-refresh (seconds, 0 to disable)" />
-                    </div>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Refresh</h3>
+                        <p class="jellySeerr-card-copy">How often the Requests tab reloads from Seerr. Use Off if you only want a manual refresh.</p>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="autoRefreshPreset">Auto-refresh</label>
+                            <select is="emby-select" id="autoRefreshPreset" class="emby-select-withcolor">
+                                <option value="0">Off</option>
+                                <option value="15">Every 15 seconds</option>
+                                <option value="30">Every 30 seconds</option>
+                                <option value="60">Every minute</option>
+                                <option value="120">Every 2 minutes</option>
+                                <option value="300">Every 5 minutes</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer" id="autoRefreshCustomWrap">
+                            <input is="emby-input" type="number" id="autoRefreshInterval" min="0" max="3600" label="Custom interval (seconds)" />
+                            <div class="fieldDescription">0 disables auto-refresh. Maximum 3600 seconds.</div>
+                        </div>
+                    </article>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Request behaviour</h3>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="confirmCancel" /> <span>Confirm before cancelling a request</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="showQuotaWarnings" /> <span>Show quota remaining</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="enableManagerTools" /> <span>Enable approve / decline / all-requests for managers</span></label></div>
+                    </article>
                 </section>
 
                 <section class="jellySeerr-panel" data-panel="users">
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label><input is="emby-checkbox" type="checkbox" id="hideUnmappedUsers" /> <span>Hide JellySeerr tabs for users who are not linked in Seerr</span></label>
-                    </div>
-                    <button is="emby-button" type="button" class="raised" id="jsRefreshUsers">Refresh mapping</button>
-                    <div id="jsUserTable" class="jellySeerr-user-table"></div>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">User mapping</h3>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label><input is="emby-checkbox" type="checkbox" id="hideUnmappedUsers" /> <span>Hide JellySeerr tabs for users who are not linked in Seerr</span></label>
+                        </div>
+                        <button is="emby-button" type="button" class="raised" id="jsRefreshUsers">Refresh mapping</button>
+                        <div id="jsUserTable" class="jellySeerr-user-table"></div>
+                    </article>
                 </section>
 
                 <section class="jellySeerr-panel" data-panel="advanced">
-                    <p class="fieldDescription">Asset URLs are relative (`../JellySeerr/...`) so reverse proxies and Jellyfin base URLs keep working.</p>
-                    <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="developerMode" /> <span>Developer mode (bypass browser cache)</span></label></div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="number" id="cacheTimeoutSeconds" label="Image cache timeout (seconds)" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="number" id="maxImageCacheEntries" label="Max cached images" />
-                    </div>
-                    <div class="inputContainer">
-                        <input is="emby-input" type="text" id="justWatchCountry" label="JustWatch country" />
-                    </div>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Caching</h3>
+                        <p class="jellySeerr-card-copy">Short caches keep Movies, TV, and Requests from hitting Seerr and *arr on every click. Requests still refresh on your timer; this just avoids repeating the same slow calls.</p>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="discoveryCacheSeconds" min="0" max="3600" label="Movies / TV cache (seconds)" />
+                            <div class="fieldDescription">How long discovery rows stay cached. 0 disables. Default 180.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="requestsCacheSeconds" min="0" max="300" label="Requests list cache (seconds)" />
+                            <div class="fieldDescription">Caches the Seerr request list between reloads. Default 20.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="servarrCacheSeconds" min="0" max="600" label="Radarr / Sonarr library cache (seconds)" />
+                            <div class="fieldDescription">Caches movie/series lists used for progress and file size. Queue data stays shorter. Default 120.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="cacheTimeoutSeconds" label="Image cache timeout (seconds)" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="maxImageCacheEntries" label="Max cached images" />
+                        </div>
+                    </article>
+                    <article class="jellySeerr-card">
+                        <h3 class="jellySeerr-card-title">Other</h3>
+                        <p class="jellySeerr-card-copy">Asset URLs are relative so reverse proxies and Jellyfin base URLs keep working.</p>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="developerMode" /> <span>Developer mode (bypass browser cache)</span></label></div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="justWatchCountry" label="JustWatch country" />
+                        </div>
+                    </article>
                 </section>
 
                 <div class="jellySeerr-savebar">
@@ -130,20 +204,68 @@
         </div>
     </div>
     <style>
-        .jellySeerr-tabs { display: flex; flex-wrap: wrap; gap: .5em; margin: 1em 0 1.25em; }
-        .jellySeerr-tab { background: transparent; border: 1px solid rgba(255,255,255,.2); color: inherit; padding: .45em .9em; border-radius: 999px; cursor: pointer; }
-        .jellySeerr-tab.is-active { background: var(--theme-accent, #00a4dc); border-color: transparent; color: #fff; }
+        #jellySeerrConfigurationPage .content-primary { max-width: 980px; }
+        .jellySeerr-hero {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 1.25rem;
+            margin: 0 0 1.5rem;
+            padding: 1.35rem 1.5rem;
+            border-radius: 1.1rem;
+            background: linear-gradient(135deg, rgba(99, 102, 241, .18), rgba(0, 164, 220, .08) 55%, transparent);
+            border: 1px solid rgba(255,255,255,.08);
+        }
+        .jellySeerr-kicker { margin: 0 0 .2rem; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
+        .jellySeerr-title { margin: 0 0 .35rem; font-size: 1.85rem; font-weight: 700; }
+        .jellySeerr-lede { margin: 0; max-width: 38rem; opacity: .78; line-height: 1.45; }
+        .jellySeerr-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .4em;
+            margin: 0 0 1.35em;
+            padding: .35em;
+            border-radius: 999px;
+            background: rgba(255,255,255,.04);
+            border: 1px solid rgba(255,255,255,.08);
+        }
+        .jellySeerr-tab {
+            background: transparent;
+            border: 0;
+            color: inherit;
+            padding: .55em 1.05em;
+            border-radius: 999px;
+            cursor: pointer;
+            opacity: .72;
+            font-weight: 600;
+        }
+        .jellySeerr-tab.is-active {
+            background: var(--theme-primary-color, var(--theme-accent, #00a4dc));
+            color: #fff;
+            opacity: 1;
+        }
         .jellySeerr-panel { display: none; }
         .jellySeerr-panel.is-active { display: block; }
-        .jellySeerr-chips { display: flex; flex-wrap: wrap; gap: .5em; margin: .75em 0 0; }
-        .jellySeerr-chip { font-size: .85em; padding: .25em .7em; border-radius: 999px; border: 1px solid rgba(255,255,255,.2); }
-        .jellySeerr-chip.is-ok { border-color: #4caf50; color: #4caf50; }
-        .jellySeerr-chip.is-bad { border-color: #f44336; color: #f44336; }
+        .jellySeerr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+        .jellySeerr-card {
+            margin-bottom: 1rem;
+            padding: 1.15rem 1.25rem 1.05rem;
+            border-radius: .95rem;
+            background: rgba(255,255,255,.04);
+            border: 1px solid rgba(255,255,255,.08);
+        }
+        .jellySeerr-card-title { margin: 0 0 .35rem; font-size: 1.05rem; }
+        .jellySeerr-card-copy { margin: 0 0 1rem; opacity: .72; line-height: 1.45; }
+        .jellySeerr-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: .4rem 0 0; }
+        .jellySeerr-chips { display: flex; flex-wrap: wrap; gap: .5em; align-content: flex-start; }
+        .jellySeerr-chip { font-size: .82em; padding: .3em .75em; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.18); }
+        .jellySeerr-chip.is-ok { border-color: rgba(76,175,80,.7); color: #81c784; }
+        .jellySeerr-chip.is-bad { border-color: rgba(244,67,54,.7); color: #ef9a9a; }
         .jellySeerr-quality-table, .jellySeerr-user-table { margin-top: 1em; overflow-x: auto; }
         .jellySeerr-quality-table table, .jellySeerr-user-table table { width: 100%; border-collapse: collapse; }
-        .jellySeerr-quality-table th, .jellySeerr-quality-table td, .jellySeerr-user-table th, .jellySeerr-user-table td { text-align: left; padding: .45em .5em; border-bottom: 1px solid rgba(255,255,255,.12); vertical-align: top; }
-        .jellySeerr-savebar { position: sticky; bottom: 0; padding: 1em 0; background: var(--background-color, transparent); }
-        .jellySeerr-tab-card { display: flex; gap: .75em; align-items: center; margin-bottom: .75em; }
+        .jellySeerr-quality-table th, .jellySeerr-quality-table td, .jellySeerr-user-table th, .jellySeerr-user-table td { text-align: left; padding: .55em .5em; border-bottom: 1px solid rgba(255,255,255,.1); vertical-align: top; }
+        .jellySeerr-savebar { position: sticky; bottom: 0; padding: 1em 0; background: linear-gradient(transparent, var(--background-color, #101010) 35%); }
+        .jellySeerr-tab-card { display: flex; gap: .75em; align-items: center; margin-bottom: .75em; padding: .55rem .7rem; border-radius: .7rem; background: rgba(255,255,255,.03); }
     </style>
     <script>
         (function () {
@@ -171,18 +293,85 @@
 
             function markDirty() { dirty = true; }
 
+            const REFRESH_PRESETS = [0, 15, 30, 60, 120, 300];
+
+            function syncRefreshPresetFromValue(seconds) {
+                const preset = $('autoRefreshPreset');
+                const wrap = $('autoRefreshCustomWrap');
+                const value = Number.isFinite(seconds) ? Math.max(0, Math.min(3600, seconds)) : 60;
+                setVal('autoRefreshInterval', value);
+                if (preset) {
+                    preset.value = REFRESH_PRESETS.indexOf(value) >= 0 ? String(value) : 'custom';
+                }
+                if (wrap) {
+                    wrap.style.display = preset && preset.value === 'custom' ? '' : 'none';
+                }
+            }
+
+            function readRefreshSeconds() {
+                const preset = $('autoRefreshPreset');
+                if (preset && preset.value !== 'custom') {
+                    return parseInt(preset.value, 10) || 0;
+                }
+                const parsed = parseInt(val('autoRefreshInterval'), 10);
+                return Number.isFinite(parsed) ? Math.max(0, Math.min(3600, parsed)) : 60;
+            }
+
+            function pick(obj) {
+                if (!obj) {
+                    return undefined;
+                }
+                for (let i = 1; i < arguments.length; i++) {
+                    if (obj[arguments[i]] !== undefined) {
+                        return obj[arguments[i]];
+                    }
+                }
+                return undefined;
+            }
+
+            function probeFileTransformation() {
+                return ApiClient.ajax({
+                    url: ApiClient.getUrl('Plugins'),
+                    type: 'GET',
+                    dataType: 'json'
+                }).then(function (plugins) {
+                    return (plugins || []).some(function (plugin) {
+                        const name = String(plugin.Name || plugin.name || '').toLowerCase();
+                        const status = String(plugin.Status || plugin.status || '').toLowerCase();
+                        return name.indexOf('file transformation') !== -1 && status !== 'disabled' && status !== 'malfunctioned';
+                    });
+                }).catch(function () {
+                    return false;
+                });
+            }
+
             function renderChips(health) {
                 const host = $('jsStatusChips');
                 if (!host) return;
-                const test = health && health.test || {};
+                const test = pick(health, 'test', 'Test') || {};
+                const testOk = pick(test, 'ok', 'Ok') === true;
+                const configured = pick(health, 'seerrConfigured', 'SeerrConfigured') === true;
+                let fileTransformation = pick(health, 'fileTransformation', 'FileTransformation') === true;
+                const enabledProfiles = Number(pick(health, 'enabledProfiles', 'EnabledProfiles') || 0);
                 const chips = [
-                    { ok: !!(health && health.seerrConfigured && test.ok), label: test.ok ? 'Seerr connected' : 'Seerr not connected' },
-                    { ok: !!(health && health.fileTransformation), label: health && health.fileTransformation ? 'File Transformation' : 'File Transformation missing' },
-                    { ok: (health && health.enabledProfiles) > 0, label: ((health && health.enabledProfiles) || 0) + ' profiles enabled' }
+                    { ok: configured && testOk, label: testOk ? 'Seerr connected' : 'Seerr not connected' },
+                    { ok: fileTransformation, label: fileTransformation ? 'File Transformation' : 'File Transformation missing' },
+                    { ok: enabledProfiles > 0, label: enabledProfiles + ' profiles enabled' }
                 ];
                 host.innerHTML = chips.map(function (chip) {
                     return '<span class="jellySeerr-chip ' + (chip.ok ? 'is-ok' : 'is-bad') + '">' + chip.label + '</span>';
                 }).join('');
+                if (!fileTransformation) {
+                    probeFileTransformation().then(function (installed) {
+                        if (!installed) {
+                            return;
+                        }
+                        chips[1] = { ok: true, label: 'File Transformation' };
+                        host.innerHTML = chips.map(function (chip) {
+                            return '<span class="jellySeerr-chip ' + (chip.ok ? 'is-ok' : 'is-bad') + '">' + chip.label + '</span>';
+                        }).join('');
+                    });
+                }
             }
 
             function renderTabs(config) {
@@ -219,54 +408,160 @@
                 return tabs;
             }
 
-            function renderQuality(profiles) {
-                const host = $('jsQualityTable');
-                if (!profiles || !profiles.length) {
-                    host.innerHTML = '<p class="fieldDescription">No profiles yet. Connect Seerr, then sync.</p>';
+            function escapeHtml(value) {
+                return String(value == null ? '' : value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function profileEnabled(p) {
+                return p && p.Enabled !== false && p.enabled !== false;
+            }
+
+            function profileServerType(p) {
+                return String(p.ServerType || p.serverType || '').toLowerCase();
+            }
+
+            function profileIs4k(p) {
+                return !!(p.Is4k || p.is4k);
+            }
+
+            function profileLabel(p) {
+                return p.DisplayName || p.displayName || p.ProfileName || p.profileName || 'Profile';
+            }
+
+            function profileFlag(p, pascal, camel) {
+                return !!(p[pascal] || p[camel]);
+            }
+
+            function setProfileFlag(p, pascal, camel, value) {
+                p[pascal] = value;
+                p[camel] = value;
+            }
+
+            function renderDefaultSelect(id, label, profiles, selectedIndex) {
+                const options = ['<option value="">Seerr default</option>'].concat(profiles.map(function (item) {
+                    const selected = item.index === selectedIndex ? ' selected' : '';
+                    return '<option value="' + item.index + '"' + selected + '>' + escapeHtml(profileLabel(item.profile)) + '</option>';
+                }));
+                return '<div class="selectContainer"><label class="selectLabel" for="' + id + '">' + escapeHtml(label) + '</label>' +
+                    '<select is="emby-select" id="' + id + '" class="emby-select-withcolor">' + options.join('') + '</select></div>';
+            }
+
+            function renderQualityDefaults(profiles) {
+                const host = $('jsQualityDefaults');
+                if (!host) {
                     return;
                 }
-                host.innerHTML = '<table><thead><tr><th>On</th><th>Label</th><th>Server</th><th>Profile</th><th>Default</th></tr></thead><tbody>' +
+                profiles = profiles || [];
+                const hide4k = checked('disable4k');
+                const movie = [];
+                const tv = [];
+                const anime = [];
+                const movie4k = [];
+                const tv4k = [];
+                let movieSel = -1;
+                let tvSel = -1;
+                let animeSel = -1;
+                let movie4kSel = -1;
+                let tv4kSel = -1;
+
+                profiles.forEach(function (p, i) {
+                    if (!profileEnabled(p)) {
+                        return;
+                    }
+                    const type = profileServerType(p);
+                    const uhd = profileIs4k(p);
+                    if (type === 'radarr' && !uhd) {
+                        movie.push({ index: i, profile: p });
+                        if (profileFlag(p, 'IsDefaultMovie', 'isDefaultMovie')) movieSel = i;
+                    }
+                    if (type === 'sonarr' && !uhd) {
+                        tv.push({ index: i, profile: p });
+                        anime.push({ index: i, profile: p });
+                        if (profileFlag(p, 'IsDefaultTv', 'isDefaultTv')) tvSel = i;
+                        if (profileFlag(p, 'IsDefaultAnime', 'isDefaultAnime')) animeSel = i;
+                    }
+                    if (type === 'radarr' && uhd) {
+                        movie4k.push({ index: i, profile: p });
+                        if (profileFlag(p, 'IsDefaultMovie4k', 'isDefaultMovie4k')) movie4kSel = i;
+                    }
+                    if (type === 'sonarr' && uhd) {
+                        tv4k.push({ index: i, profile: p });
+                        if (profileFlag(p, 'IsDefaultTv4k', 'isDefaultTv4k')) tv4kSel = i;
+                    }
+                });
+
+                host.innerHTML = renderDefaultSelect('jsDefaultMovie', 'Movies', movie, movieSel) +
+                    renderDefaultSelect('jsDefaultTv', 'TV', tv, tvSel) +
+                    renderDefaultSelect('jsDefaultAnime', 'Anime', anime, animeSel) +
+                    (hide4k ? '' : renderDefaultSelect('jsDefaultMovie4k', '4K movies', movie4k, movie4kSel)) +
+                    (hide4k ? '' : renderDefaultSelect('jsDefaultTv4k', '4K TV', tv4k, tv4kSel));
+            }
+
+            function renderQuality(profiles) {
+                const host = $('jsQualityTable');
+                profiles = profiles || [];
+                if (!profiles.length) {
+                    host.innerHTML = '<p class="fieldDescription">No profiles yet. Connect Seerr, then sync.</p>';
+                    renderQualityDefaults([]);
+                    return;
+                }
+                host.innerHTML = '<table><thead><tr><th>On</th><th>Label</th><th>Server</th><th>Profile</th></tr></thead><tbody>' +
                     profiles.map(function (p, i) {
+                        const on = profileEnabled(p) ? ' checked' : '';
+                        const label = escapeHtml(profileLabel(p));
+                        const server = escapeHtml((p.ServerName || p.serverName || profileServerType(p) || 'Server') + (profileIs4k(p) ? ' · 4K' : ''));
+                        const name = escapeHtml(p.ProfileName || p.profileName || '');
                         return '<tr>' +
-                            '<td><input type="checkbox" data-q-enabled="' + i + '" ' + (p.Enabled !== false && p.enabled !== false ? 'checked' : '') + '></td>' +
-                            '<td><input type="text" data-q-name="' + i + '" value="' + (p.DisplayName || p.displayName || p.ProfileName || '') + '"></td>' +
-                            '<td>' + (p.ServerName || p.serverName || '') + (p.Is4k || p.is4k ? ' (4K)' : '') + '</td>' +
-                            '<td>' + (p.ProfileName || p.profileName || '') + '</td>' +
-                            '<td>' +
-                            '<label><input type="radio" name="def-movie" data-q-def="IsDefaultMovie" data-q-i="' + i + '" ' + (p.IsDefaultMovie || p.isDefaultMovie ? 'checked' : '') + '> Movie</label> ' +
-                            '<label><input type="radio" name="def-tv" data-q-def="IsDefaultTv" data-q-i="' + i + '" ' + (p.IsDefaultTv || p.isDefaultTv ? 'checked' : '') + '> TV</label> ' +
-                            '<label><input type="radio" name="def-anime" data-q-def="IsDefaultAnime" data-q-i="' + i + '" ' + (p.IsDefaultAnime || p.isDefaultAnime ? 'checked' : '') + '> Anime</label> ' +
-                            '<label><input type="radio" name="def-movie4k" data-q-def="IsDefaultMovie4k" data-q-i="' + i + '" ' + (p.IsDefaultMovie4k || p.isDefaultMovie4k ? 'checked' : '') + '> 4K movie</label> ' +
-                            '<label><input type="radio" name="def-tv4k" data-q-def="IsDefaultTv4k" data-q-i="' + i + '" ' + (p.IsDefaultTv4k || p.isDefaultTv4k ? 'checked' : '') + '> 4K TV</label>' +
-                            '</td></tr>';
+                            '<td><input type="checkbox" data-q-enabled="' + i + '"' + on + ' /></td>' +
+                            '<td><input type="text" class="emby-input" data-q-name="' + i + '" value="' + label + '" /></td>' +
+                            '<td>' + server + '</td>' +
+                            '<td>' + name + '</td></tr>';
                     }).join('') + '</tbody></table>';
+                renderQualityDefaults(profiles);
             }
 
             function collectQuality(config) {
                 const profiles = config.QualityProfiles || config.qualityProfiles || [];
                 profiles.forEach(function (p) {
-                    p.IsDefaultMovie = false; p.isDefaultMovie = false;
-                    p.IsDefaultTv = false; p.isDefaultTv = false;
-                    p.IsDefaultAnime = false; p.isDefaultAnime = false;
-                    p.IsDefaultMovie4k = false; p.isDefaultMovie4k = false;
-                    p.IsDefaultTv4k = false; p.isDefaultTv4k = false;
+                    setProfileFlag(p, 'IsDefaultMovie', 'isDefaultMovie', false);
+                    setProfileFlag(p, 'IsDefaultTv', 'isDefaultTv', false);
+                    setProfileFlag(p, 'IsDefaultAnime', 'isDefaultAnime', false);
+                    setProfileFlag(p, 'IsDefaultMovie4k', 'isDefaultMovie4k', false);
+                    setProfileFlag(p, 'IsDefaultTv4k', 'isDefaultTv4k', false);
                 });
                 page.querySelectorAll('[data-q-enabled]').forEach(function (box) {
                     const i = parseInt(box.getAttribute('data-q-enabled'), 10);
-                    if (profiles[i]) { profiles[i].Enabled = box.checked; profiles[i].enabled = box.checked; }
+                    if (profiles[i]) {
+                        profiles[i].Enabled = box.checked;
+                        profiles[i].enabled = box.checked;
+                    }
                 });
                 page.querySelectorAll('[data-q-name]').forEach(function (input) {
                     const i = parseInt(input.getAttribute('data-q-name'), 10);
-                    if (profiles[i]) { profiles[i].DisplayName = input.value; profiles[i].displayName = input.value; }
-                });
-                page.querySelectorAll('[data-q-def]:checked').forEach(function (radio) {
-                    const i = parseInt(radio.getAttribute('data-q-i'), 10);
-                    const key = radio.getAttribute('data-q-def');
-                    if (profiles[i] && key) {
-                        profiles[i][key] = true;
-                        profiles[i][key.charAt(0).toLowerCase() + key.slice(1)] = true;
+                    if (profiles[i]) {
+                        profiles[i].DisplayName = input.value;
+                        profiles[i].displayName = input.value;
                     }
                 });
+                function applyDefault(selectId, pascal, camel) {
+                    const el = $(selectId);
+                    if (!el || el.value === '') {
+                        return;
+                    }
+                    const i = parseInt(el.value, 10);
+                    if (profiles[i]) {
+                        setProfileFlag(profiles[i], pascal, camel, true);
+                    }
+                }
+                applyDefault('jsDefaultMovie', 'IsDefaultMovie', 'isDefaultMovie');
+                applyDefault('jsDefaultTv', 'IsDefaultTv', 'isDefaultTv');
+                applyDefault('jsDefaultAnime', 'IsDefaultAnime', 'isDefaultAnime');
+                applyDefault('jsDefaultMovie4k', 'IsDefaultMovie4k', 'isDefaultMovie4k');
+                applyDefault('jsDefaultTv4k', 'IsDefaultTv4k', 'isDefaultTv4k');
                 return profiles;
             }
 
@@ -318,11 +613,17 @@
                 setChecked('showQuotaWarnings', config.ShowQuotaWarnings !== false);
                 setChecked('enableManagerTools', config.EnableManagerTools !== false);
                 const requests = adv.Requests || adv.requests || {};
-                setVal('autoRefreshInterval', requests.AutoRefreshIntervalSeconds || requests.autoRefreshIntervalSeconds || 10);
+                const refreshSeconds = requests.AutoRefreshIntervalSeconds != null
+                    ? Number(requests.AutoRefreshIntervalSeconds)
+                    : (requests.autoRefreshIntervalSeconds != null ? Number(requests.autoRefreshIntervalSeconds) : 60);
+                syncRefreshPresetFromValue(Number.isFinite(refreshSeconds) ? refreshSeconds : 60);
                 setChecked('hideUnmappedUsers', config.HideUnmappedUsers !== false);
                 setChecked('developerMode', config.DeveloperMode === true);
                 setVal('cacheTimeoutSeconds', config.CacheTimeoutSeconds || 86400);
                 setVal('maxImageCacheEntries', config.MaxImageCacheEntries || 5000);
+                setVal('discoveryCacheSeconds', config.DiscoveryCacheSeconds != null ? config.DiscoveryCacheSeconds : 180);
+                setVal('requestsCacheSeconds', config.RequestsCacheSeconds != null ? config.RequestsCacheSeconds : 20);
+                setVal('servarrCacheSeconds', config.ServarrCacheSeconds != null ? config.ServarrCacheSeconds : 120);
                 const jw = adv.JustWatch || adv.justWatch || {};
                 setVal('justWatchCountry', jw.Country || jw.country || 'US');
                 renderTabs(config);
@@ -361,18 +662,34 @@
                 config.DeveloperMode = checked('developerMode');
                 config.CacheTimeoutSeconds = parseInt(val('cacheTimeoutSeconds'), 10) || 86400;
                 config.MaxImageCacheEntries = parseInt(val('maxImageCacheEntries'), 10) || 5000;
+                config.DiscoveryCacheSeconds = Math.max(0, parseInt(val('discoveryCacheSeconds'), 10) || 0);
+                config.RequestsCacheSeconds = Math.max(0, parseInt(val('requestsCacheSeconds'), 10) || 0);
+                config.ServarrCacheSeconds = Math.max(0, parseInt(val('servarrCacheSeconds'), 10) || 0);
                 config.Tabs = collectTabs(config);
                 config.QualityProfiles = collectQuality(config);
-                config.Advanced = config.Advanced || {};
-                config.Advanced.Discovery = config.Advanced.Discovery || {};
+                config.Advanced = config.Advanced || config.advanced || {};
+                config.Advanced.Discovery = config.Advanced.Discovery || config.Advanced.discovery || {};
                 config.Advanced.Discovery.HideRequestedMedia = checked('hideRequested');
                 config.Advanced.Discovery.HideAvailableInLibrary = checked('hideAvailable');
                 config.Advanced.Discovery.HideAdultContent = checked('hideAdult');
-                config.Advanced.Requests = config.Advanced.Requests || {};
-                config.Advanced.Requests.AutoRefreshIntervalSeconds = parseInt(val('autoRefreshInterval'), 10) || 0;
-                config.Advanced.JustWatch = config.Advanced.JustWatch || {};
+                config.Advanced.Requests = config.Advanced.Requests || config.Advanced.requests || {};
+                config.Advanced.Requests.AutoRefreshIntervalSeconds = readRefreshSeconds();
+                config.Advanced.JustWatch = config.Advanced.JustWatch || config.Advanced.justWatch || {};
                 config.Advanced.JustWatch.Country = val('justWatchCountry') || 'US';
                 return config;
+            }
+
+            function loadUsers() {
+                return ApiClient.ajax({
+                    url: ApiClient.getUrl('JellySeerr/admin/users'),
+                    type: 'GET',
+                    dataType: 'json'
+                }).then(function (users) {
+                    renderUsers(users || []);
+                    return users;
+                }).catch(function () {
+                    renderUsers([]);
+                });
             }
 
             function loadHealth() {
@@ -382,10 +699,11 @@
                     dataType: 'json'
                 }).then(function (health) {
                     renderChips(health);
-                    renderUsers(health.users || []);
                     return health;
                 }).catch(function () {
-                    renderChips({ seerrConfigured: false, fileTransformation: false, enabledProfiles: 0, test: { ok: false } });
+                    const profiles = currentConfig.QualityProfiles || currentConfig.qualityProfiles || [];
+                    const enabled = profiles.filter(function (p) { return p.Enabled !== false && p.enabled !== false; }).length;
+                    renderChips({ seerrConfigured: false, fileTransformation: false, enabledProfiles: enabled, test: { ok: false } });
                 });
             }
 
@@ -395,7 +713,33 @@
                 });
             });
 
-            page.addEventListener('change', markDirty);
+            page.addEventListener('change', function (event) {
+                markDirty();
+                const target = event.target;
+                if (!target) {
+                    return;
+                }
+                if (target.id === 'autoRefreshPreset') {
+                    if (target.value !== 'custom') {
+                        setVal('autoRefreshInterval', target.value);
+                    }
+                    const wrap = $('autoRefreshCustomWrap');
+                    if (wrap) {
+                        wrap.style.display = target.value === 'custom' ? '' : 'none';
+                    }
+                }
+                if (target.id === 'disable4k' || target.getAttribute('data-q-enabled') != null) {
+                    const profiles = currentConfig.QualityProfiles || currentConfig.qualityProfiles || [];
+                    page.querySelectorAll('[data-q-enabled]').forEach(function (box) {
+                        const i = parseInt(box.getAttribute('data-q-enabled'), 10);
+                        if (profiles[i]) {
+                            profiles[i].Enabled = box.checked;
+                            profiles[i].enabled = box.checked;
+                        }
+                    });
+                    renderQualityDefaults(profiles);
+                }
+            });
             page.addEventListener('input', markDirty);
 
             $('jsTestConnection').addEventListener('click', function () {
@@ -406,8 +750,15 @@
                 }).then(function () {
                     return ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/admin/test'), type: 'POST', dataType: 'json' });
                 }).then(function (result) {
-                    msg(result.message || (result.ok ? 'Connected.' : 'Failed.'));
+                    msg(pick(result, 'message', 'Message') || (pick(result, 'ok', 'Ok') ? 'Connected.' : 'Failed.'));
+                    renderChips({
+                        seerrConfigured: pick(result, 'ok', 'Ok') === true,
+                        fileTransformation: pick(result, 'fileTransformation', 'FileTransformation') === true,
+                        enabledProfiles: Number(pick(result, 'profileCount', 'ProfileCount') || 0),
+                        test: { ok: pick(result, 'ok', 'Ok') === true }
+                    });
                     loadHealth();
+                    loadUsers();
                 }).catch(function () { msg('Connection test failed.'); });
             });
 
@@ -424,13 +775,20 @@
                     .then(function (profiles) {
                         currentConfig.QualityProfiles = profiles;
                         renderQuality(profiles);
+                        const enabled = (profiles || []).filter(function (p) { return p.Enabled !== false && p.enabled !== false; }).length;
+                        renderChips({
+                            seerrConfigured: true,
+                            fileTransformation: true,
+                            enabledProfiles: enabled,
+                            test: { ok: true }
+                        });
                         loadHealth();
                     }).catch(function () {
                         Dashboard.alert('Could not sync quality profiles. Test the Seerr connection first.');
                     });
             });
 
-            $('jsRefreshUsers').addEventListener('click', loadHealth);
+            $('jsRefreshUsers').addEventListener('click', loadUsers);
 
             page.querySelector('form').addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -455,7 +813,8 @@
             Dashboard.showLoadingMsg();
             Promise.all([
                 ApiClient.getPluginConfiguration(pluginId),
-                loadHealth()
+                loadHealth(),
+                loadUsers()
             ]).then(function (results) {
                 applyConfig(results[0] || {});
                 Dashboard.hideLoadingMsg();

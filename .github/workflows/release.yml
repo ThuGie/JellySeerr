@@ -68,20 +68,24 @@ jobs:
           ZIP_NAME="Jellyfin.Plugin.JellySeerr_10.11.0.zip"
           DIST_DIR="${GITHUB_WORKSPACE}/dist"
           ZIP_PATH="${DIST_DIR}/${ZIP_NAME}"
-          CHANGELOG="Release ${VERSION}."
+          CHANGELOG=$(jq -r '.changelog // "See the GitHub release."' meta.json)
+          DESCRIPTION=$(jq -r '.description' meta.json)
+          OVERVIEW=$(jq -r '.overview' meta.json)
 
           jq -n \
             --arg version "$VERSION" \
             --arg timestamp "$TIMESTAMP" \
             --arg targetAbi "${{ env.TARGET_ABI }}" \
             --arg changelog "$CHANGELOG" \
+            --arg description "$DESCRIPTION" \
+            --arg overview "$OVERVIEW" \
             '{
               category: "General",
               changelog: $changelog,
-              description: "Discover and request movies and TV shows through Seerr, with curated quality profiles and full request management.",
+              description: $description,
               guid: "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
               name: "JellySeerr",
-              overview: "Jellyfin tabs for Seerr discovery and requests, plus admin controls for which quality profiles users can pick.",
+              overview: $overview,
               owner: "ThuGie",
               targetAbi: $targetAbi,
               timestamp: $timestamp,
@@ -151,10 +155,10 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: JellySeerr ${{ steps.version.outputs.version }}
           body: |
-            Install from Dashboard → Plugins → Repositories using:
+            ${{ steps.package.outputs.changelog }}
+
+            Catalog URL:
 
             `https://raw.githubusercontent.com/${{ github.repository }}/main/manifest.json`
-
-            Changelog: ${{ steps.package.outputs.changelog }}
           files: dist/${{ steps.package.outputs.zip_name }}
           fail_on_unmatched_files: true

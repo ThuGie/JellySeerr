@@ -105,6 +105,7 @@
 
 .jellySeerr-request-box {
     min-width: 0;
+    cursor: pointer;
 }
 
 .jellySeerr-request-card-slot {

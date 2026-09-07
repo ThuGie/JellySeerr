@@ -56,7 +56,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     };
 
     const AUTO_REFRESH_DEBOUNCE_MS = 1000;
-    const DEFAULT_AUTO_REFRESH_INTERVAL_SECONDS = 10;
+    const DEFAULT_AUTO_REFRESH_INTERVAL_SECONDS = 60;
 
     function loadClientSettings() {
         return ApiClient.ajax({
@@ -129,8 +129,11 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function getRequestsAdvanced() {
         const plugin = getPlugin();
-        const advanced = plugin && plugin._displaySettings && plugin._displaySettings.Advanced;
-        return (advanced && advanced.requests) || {};
+        const settings = plugin && plugin._displaySettings;
+        const advanced = (settings && (settings.Advanced || settings.advanced))
+            || (plugin && plugin._advancedSettings)
+            || {};
+        return advanced.requests || advanced.Requests || {};
     }
 
     function getPageSize() {
@@ -290,13 +293,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
             });
     }
 
-    function openRequestModal(tmdbId, mediaType) {
+    function openRequestModal(tmdbId, mediaType, context) {
         if (!tmdbId || !mediaType) {
             return;
         }
 
         if (window.jellySeerrModal && typeof window.jellySeerrModal.open === 'function') {
-            window.jellySeerrModal.open(tmdbId, mediaType);
+            window.jellySeerrModal.open(tmdbId, mediaType, context);
         }
     }
 
@@ -317,80 +320,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return base + '/add/new?term=tmdb:' + item.tmdbId;
     }
 
-    function renderCardActions(item) {
-        if (!item.tmdbId) {
-            return;
-        }
-
-        const safeTitle = escapeHtml(item.title || 'content');
-        const mediaType = item.type === 'tv' ? 'tv' : 'movie';
-        const safeTmdbId = escapeHtml(String(item.tmdbId));
-        const safeMediaType = escapeHtml(mediaType);
-
-        const playBtn = isPlayableRequest(item) ? `
-            <button type="button" class="jellySeerr-request-action-btn jellySeerr-request-play-btn"
-                data-jellyfin-item-id="${escapeHtml(String(item.jellyfinItemId))}"
-                aria-label="Open ${safeTitle} in Jellyfin" title="Open in Jellyfin">
-                <span class="material-icons" aria-hidden="true">play_arrow</span>
-            </button>` : '';
-
-        let radarrBtn = '';
-        if (mediaType === 'movie' && state.clientSettings?.radarrUrl) {
-            const radarrUrl = getServarrOpenUrl(item);
-            if (radarrUrl) {
-                radarrBtn = `
-            <button type="button" class="jellySeerr-request-action-btn jellySeerr-request-radarr-btn"
-                data-open-url="${escapeHtml(radarrUrl)}"
-                aria-label="Open ${safeTitle} in Radarr" title="Open in Radarr">
-                ${RADARR_LOGO}
-            </button>`;
-            }
-        }
-
-        let sonarrBtn = '';
-        if (mediaType === 'tv' && state.clientSettings?.sonarrUrl) {
-            const sonarrUrl = getServarrOpenUrl(item);
-            if (sonarrUrl) {
-                sonarrBtn = `
-            <button type="button" class="jellySeerr-request-action-btn jellySeerr-request-sonarr-btn"
-                data-open-url="${escapeHtml(sonarrUrl)}"
-                aria-label="Open ${safeTitle} in Sonarr" title="Open in Sonarr">
-                ${SONARR_LOGO}
-            </button>`;
-            }
-        }
-
-        return `
-            <div class="jellySeerr-request-card-actions">
-                ${playBtn}
-                <button type="button" class="jellySeerr-request-action-btn jellySeerr-request-modal-btn"
-                    data-tmdb-id="${safeTmdbId}" data-media-type="${safeMediaType}"
-                    aria-label="View request details for ${safeTitle}" title="Request details">
-                    <span class="material-icons" aria-hidden="true">download</span>
-                </button>
-                <button type="button" class="jellySeerr-request-action-btn jellySeerr-request-seerr-btn"
-                    data-tmdb-id="${safeTmdbId}" data-media-type="${safeMediaType}"
-                    aria-label="Open ${safeTitle} in Seerr" title="Open in Seerr">
-                    ${SEERR_LOGO}
-                </button>
-                ${radarrBtn}
-                ${sonarrBtn}
-                ${item.isPending ? `
-                <button type="button" class="jellySeerr-request-action-btn" data-request-cancel="${item.id}" title="Cancel request">
-                    <span class="material-icons" aria-hidden="true">cancel</span>
-                </button>` : ''}
-                ${item.isPending ? `
-                <button type="button" class="jellySeerr-request-action-btn" data-request-approve="${item.id}" title="Approve request">
-                    <span class="material-icons" aria-hidden="true">check</span>
-                </button>
-                <button type="button" class="jellySeerr-request-action-btn" data-request-decline="${item.id}" title="Decline request">
-                    <span class="material-icons" aria-hidden="true">block</span>
-                </button>` : ''}
-                ${item.isFailed ? `
-                <button type="button" class="jellySeerr-request-action-btn" data-request-retry="${item.id}" title="Retry request">
-                    <span class="material-icons" aria-hidden="true">replay</span>
-                </button>` : ''}
-            </div>`;
+    function renderCardActions() {
+        return '';
     }
 
     function mapRequestToDiscoverItem(item) {
@@ -443,11 +374,35 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function formatBytes(bytes) {
         const value = Number(bytes);
-        if (!value || value <= 0) {
-            return '0.0 GB';
+        if (!Number.isFinite(value) || value < 1) {
+            return '';
         }
 
-        return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let size = value;
+        let unit = 0;
+        while (size >= 1024 && unit < units.length - 1) {
+            size /= 1024;
+            unit += 1;
+        }
+
+        const digits = unit === 0 ? 0 : (size >= 100 ? 0 : (size >= 10 ? 1 : 2));
+        return size.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1') + ' ' + units[unit];
+    }
+
+    function formatTransfer(downloaded, total) {
+        const totalText = formatBytes(total);
+        const downText = formatBytes(downloaded);
+        if (!totalText && !downText) {
+            return '';
+        }
+        if (total > 0 && downloaded >= total - 1024) {
+            return totalText;
+        }
+        if (!totalText) {
+            return downText;
+        }
+        return (downText || '0 B') + ' / ' + totalText;
     }
 
     function getServarrProgress(item) {
@@ -480,16 +435,16 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const isFailed = progress.statusKey === 'failed' || (item.mediaStatusLabel || '').toLowerCase() === 'failed';
         const percent = isFailed ? 100 : Math.max(0, Math.min(100, Number(progress.percent) || 0));
         const statusKey = isFailed ? 'failed' : escapeHtml(progress.statusKey);
-        const isTransfer = !isFailed && progress.isActive === true && (
-            progress.statusKey === 'queued' || progress.statusKey.indexOf('downloaded-') === 0
-        );
+        const isQueued = progress.statusKey === 'queued';
+        const isDownloaded = !isFailed && String(progress.statusKey || '').indexOf('downloaded-') === 0;
+        const sizeText = formatTransfer(progress.downloadedBytes, progress.totalBytes);
 
-        const percentText = isFailed ? 'Failed' : (isTransfer ? `${percent}%` : '0%');
+        const percentText = isFailed
+            ? 'Failed'
+            : (isQueued ? `${percent}%` : (isDownloaded ? '100%' : (progress.statusLabel || '')));
         const detailText = isFailed
             ? 'Failed to find content'
-            : (isTransfer
-                ? `${formatBytes(progress.downloadedBytes)}/${formatBytes(progress.totalBytes)}`
-                : (progress.statusLabel || ''));
+            : (sizeText || progress.statusLabel || '');
 
         return `
             <div class="jellySeerr-request-progress" data-status="${statusKey}">
@@ -559,8 +514,17 @@ window.jellySeerrLog = window.jellySeerrLog || {
             return;
         }
 
+        const mediaType = item.type === 'tv' ? 'tv' : 'movie';
+        const safeTitle = escapeHtml(item.title || 'Unknown');
         return `
-            <article class="jellySeerr-request-box ${layoutClass}">
+            <article class="jellySeerr-request-box ${layoutClass}" role="button" tabindex="0"
+                data-tmdb-id="${escapeHtml(String(item.tmdbId || ''))}"
+                data-media-type="${escapeHtml(mediaType)}"
+                data-request-id="${escapeHtml(String(item.id || ''))}"
+                data-request-pending="${item.isPending ? 'true' : 'false'}"
+                data-request-failed="${item.isFailed ? 'true' : 'false'}"
+                data-request-4k="${item.is4k ? 'true' : 'false'}"
+                aria-label="Open details for ${safeTitle}">
                 <div class="jellySeerr-request-box-inner">
                     <div class="jellySeerr-request-card-slot">${discoverCard}${renderCardActions(item) || ''}</div>
                     ${renderContentBlock(item, isLandscape)}
@@ -944,6 +908,18 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }
         container.dataset.jellySeerrRequestsBound = 'true';
 
+        container.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            const requestBox = event.target.closest('.jellySeerr-request-box');
+            if (!requestBox || !container.contains(requestBox)) {
+                return;
+            }
+            event.preventDefault();
+            requestBox.click();
+        });
+
         container.addEventListener('click', function (event) {
             const reloadBtn = event.target.closest('.jellySeerr-requests-reload');
             if (reloadBtn) {
@@ -952,84 +928,20 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 return;
             }
 
-            const modalBtn = event.target.closest('.jellySeerr-request-modal-btn');
-            if (modalBtn) {
+            const requestBox = event.target.closest('.jellySeerr-request-box');
+            if (requestBox && container.contains(requestBox)) {
                 event.preventDefault();
                 event.stopPropagation();
                 openRequestModal(
-                    modalBtn.getAttribute('data-tmdb-id'),
-                    modalBtn.getAttribute('data-media-type')
-                );
-                return;
-            }
-
-            const seerrBtn = event.target.closest('.jellySeerr-request-seerr-btn');
-            if (seerrBtn) {
-                event.preventDefault();
-                event.stopPropagation();
-                openJellyseerrManage(
-                    seerrBtn.getAttribute('data-tmdb-id'),
-                    seerrBtn.getAttribute('data-media-type')
-                );
-                return;
-            }
-
-            const radarrBtn = event.target.closest('.jellySeerr-request-radarr-btn');
-            if (radarrBtn) {
-                event.preventDefault();
-                event.stopPropagation();
-                openServarrUrl(radarrBtn.getAttribute('data-open-url'));
-                return;
-            }
-
-            const sonarrBtn = event.target.closest('.jellySeerr-request-sonarr-btn');
-            if (sonarrBtn) {
-                event.preventDefault();
-                event.stopPropagation();
-                openServarrUrl(sonarrBtn.getAttribute('data-open-url'));
-                return;
-            }
-
-            const playBtn = event.target.closest('.jellySeerr-request-play-btn');
-            if (playBtn) {
-                event.preventDefault();
-                event.stopPropagation();
-                navigateToJellyfinItem(playBtn.getAttribute('data-jellyfin-item-id'));
-                return;
-            }
-
-            const actionBtn = event.target.closest('[data-request-cancel], [data-request-approve], [data-request-decline], [data-request-retry]');
-            if (actionBtn) {
-                event.preventDefault();
-                event.stopPropagation();
-                const cancelId = actionBtn.getAttribute('data-request-cancel');
-                const approveId = actionBtn.getAttribute('data-request-approve');
-                const declineId = actionBtn.getAttribute('data-request-decline');
-                const retryId = actionBtn.getAttribute('data-request-retry');
-                let url;
-                let method = 'POST';
-                if (cancelId) {
-                    if (!window.confirm('Cancel this request?')) {
-                        return;
+                    requestBox.getAttribute('data-tmdb-id'),
+                    requestBox.getAttribute('data-media-type'),
+                    {
+                        requestId: parseInt(requestBox.getAttribute('data-request-id'), 10),
+                        isPending: requestBox.getAttribute('data-request-pending') === 'true',
+                        isFailed: requestBox.getAttribute('data-request-failed') === 'true',
+                        is4k: requestBox.getAttribute('data-request-4k') === 'true'
                     }
-                    url = ApiClient.getUrl('JellySeerr/request/' + cancelId);
-                    method = 'DELETE';
-                } else if (approveId) {
-                    url = ApiClient.getUrl('JellySeerr/request/' + approveId + '/approve');
-                } else if (declineId) {
-                    url = ApiClient.getUrl('JellySeerr/request/' + declineId + '/decline');
-                } else if (retryId) {
-                    url = ApiClient.getUrl('JellySeerr/request/' + retryId + '/retry');
-                }
-                if (!url) {
-                    return;
-                }
-                ApiClient.ajax({ url: url, type: method }).then(function () {
-                    loadRequests(container, { keepVisible: true });
-                }).catch(function (err) {
-                    log.error('request action failed', err);
-                    Dashboard.alert('That request action failed.');
-                });
+                );
                 return;
             }
 

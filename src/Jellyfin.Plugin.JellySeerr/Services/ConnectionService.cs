@@ -2,7 +2,6 @@ using System.Runtime.Loader;
 using System.Xml.Linq;
 using Jellyfin.Plugin.JellySeerr.Configuration;
 using MediaBrowser.Common.Configuration;
-using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -29,9 +28,33 @@ public class ConnectionService
 
     public bool FileTransformationPresent()
     {
-        return AssemblyLoadContext.All
+        if (AssemblyLoadContext.All
             .SelectMany(x => x.Assemblies)
-            .Any(x => x.FullName?.Contains(".FileTransformation", StringComparison.Ordinal) == true);
+            .Any(x =>
+            {
+                string name = x.GetName().Name ?? x.FullName ?? string.Empty;
+                return name.Contains("FileTransformation", StringComparison.OrdinalIgnoreCase);
+            }))
+        {
+            return true;
+        }
+
+        try
+        {
+            string pluginsPath = _applicationPaths.PluginsPath;
+            if (Directory.Exists(pluginsPath) &&
+                Directory.EnumerateFileSystemEntries(pluginsPath)
+                    .Any(path => Path.GetFileName(path).Contains("FileTransformation", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "JS • File Transformation folder probe failed");
+        }
+
+        return false;
     }
 
     public async Task<object> TestConnectionAsync(CancellationToken cancellationToken)
@@ -69,13 +92,19 @@ public class ConnectionService
         }
     }
 
-    public async Task<object> GetHealthAsync(IUserManager userManager, CancellationToken cancellationToken)
+    public async Task<object> GetHealthAsync(CancellationToken cancellationToken)
     {
         PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
-        object test = await TestConnectionAsync(cancellationToken).ConfigureAwait(false);
-        List<object> users = _seerr.IsConfigured(config)
-            ? await _users.MapJellyfinUsersAsync(userManager, cancellationToken).ConfigureAwait(false)
-            : new List<object>();
+        object test;
+        try
+        {
+            test = await TestConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "JS • health connection test failed");
+            test = new { ok = false, message = ex.Message };
+        }
 
         return new
         {
@@ -84,8 +113,7 @@ public class ConnectionService
             seerrFinImportAvailable = File.Exists(SeerrFinConfigPath()),
             enabledProfiles = (config.QualityProfiles ?? new List<QualityProfileEntry>()).Count(p => p.Enabled),
             totalProfiles = (config.QualityProfiles ?? new List<QualityProfileEntry>()).Count,
-            test,
-            users
+            test
         };
     }
 

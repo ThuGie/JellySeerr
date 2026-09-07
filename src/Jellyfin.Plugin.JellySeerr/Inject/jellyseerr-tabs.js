@@ -1285,7 +1285,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     cardsIncludeMetaText: self.readAdvancedBool(requests.cardsIncludeMetaText ?? requests.CardsIncludeMetaText, false),
                     includePartialsInProcessingFilter: self.readAdvancedBool(requests.includePartialsInProcessingFilter ?? requests.IncludePartialsInProcessingFilter, false),
                     splitPartiallyAvailableFilter: self.readAdvancedBool(requests.splitPartiallyAvailableFilter ?? requests.SplitPartiallyAvailableFilter, false),
-                    autoRefreshIntervalSeconds: requests.autoRefreshIntervalSeconds ?? requests.AutoRefreshIntervalSeconds ?? 10,
+                    autoRefreshIntervalSeconds: requests.autoRefreshIntervalSeconds ?? requests.AutoRefreshIntervalSeconds ?? 60,
                     refreshOnVisibility: self.readAdvancedBool(requests.refreshOnVisibility ?? requests.RefreshOnVisibility, true),
                     refreshOnTabShow: self.readAdvancedBool(requests.refreshOnTabShow ?? requests.RefreshOnTabShow, true)
                 },

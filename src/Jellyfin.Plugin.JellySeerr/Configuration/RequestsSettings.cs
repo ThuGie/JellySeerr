@@ -14,7 +14,7 @@ public class AdvancedRequestsSettings
 
     public bool SplitPartiallyAvailableFilter { get; set; }
 
-    public int AutoRefreshIntervalSeconds { get; set; } = 10;
+    public int AutoRefreshIntervalSeconds { get; set; } = 60;
 
     public bool RefreshOnVisibility { get; set; } = true;
 

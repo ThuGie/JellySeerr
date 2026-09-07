@@ -3,6 +3,7 @@ using System.Globalization;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellySeerr.Configuration;
+using Jellyfin.Plugin.JellySeerr.Helpers;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Querying;
@@ -79,14 +80,28 @@ public class RequestListService
         string apiPath = $"/api/v1/request?take={take}&skip={skip}&sort=added&sortDirection=desc{filterParam}{mineParam}";
         try
         {
-            using HttpResponseMessage response = await client.GetAsync(apiPath, cancellationToken).ConfigureAwait(false);
-            string raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            string cacheKey = $"requests:{jellyseerrUserId}:{allRequests}:{filter}:{take}:{skip}";
+            int cacheSeconds = Math.Clamp(config.RequestsCacheSeconds, 0, 300);
+            JObject data;
+            if (cacheSeconds > 0 && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JObject cachedData)
             {
-                return ((int)response.StatusCode, raw);
+                data = cachedData;
             }
+            else
+            {
+                using HttpResponseMessage response = await client.GetAsync(apiPath, cancellationToken).ConfigureAwait(false);
+                string raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return ((int)response.StatusCode, raw);
+                }
 
-            JObject data = JObject.Parse(raw);
+                data = JObject.Parse(raw);
+                if (cacheSeconds > 0)
+                {
+                    JsonMemoryCache.Set(cacheKey, data, TimeSpan.FromSeconds(cacheSeconds));
+                }
+            }
             JArray? results = data.Value<JArray>("results");
             if (results == null || results.Count == 0)
             {

@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using Jellyfin.Plugin.JellySeerr.Configuration;
 using Jellyfin.Plugin.JellySeerr.Configuration.Advanced;
+using Jellyfin.Plugin.JellySeerr.Helpers;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -92,7 +93,7 @@ public sealed class ServarrProgressService
         try
         {
             using HttpClient client = CreateClient(config.RadarrUrl!, config.RadarrApiKey!);
-            List<JObject> queueRecords = await FetchAllQueueRecordsAsync(client, includeMovie: true, cancellationToken)
+            List<JObject> queueRecords = await FetchAllQueueRecordsCachedAsync(client, includeMovie: true, cancellationToken)
                 .ConfigureAwait(false);
 
             HashSet<int> tmdbIds = contexts
@@ -103,7 +104,8 @@ public sealed class ServarrProgressService
             Dictionary<int, JObject> moviesByTmdbId = new();
             if (tmdbIds.Count > 0)
             {
-                JArray? movies = await GetJsonArrayAsync(client, "movie", cancellationToken).ConfigureAwait(false);
+                JArray? movies = await GetCachedJsonArrayAsync(client, "servarr:radarr:movies", "movie", LibraryCacheTtl(), cancellationToken)
+                    .ConfigureAwait(false);
                 if (movies != null)
                 {
                     foreach (JObject movie in movies.OfType<JObject>())
@@ -161,7 +163,7 @@ public sealed class ServarrProgressService
         try
         {
             using HttpClient client = CreateClient(config.SonarrUrl!, config.SonarrApiKey!);
-            List<JObject> queueRecords = await FetchAllQueueRecordsAsync(client, includeMovie: false, cancellationToken)
+            List<JObject> queueRecords = await FetchAllQueueRecordsCachedAsync(client, includeMovie: false, cancellationToken)
                 .ConfigureAwait(false);
 
             HashSet<int> tmdbIds = contexts
@@ -173,7 +175,8 @@ public sealed class ServarrProgressService
             Dictionary<int, List<JObject>> episodesBySeriesId = new();
             if (tmdbIds.Count > 0)
             {
-                JArray? seriesList = await GetJsonArrayAsync(client, "series", cancellationToken).ConfigureAwait(false);
+                JArray? seriesList = await GetCachedJsonArrayAsync(client, "servarr:sonarr:series", "series", LibraryCacheTtl(), cancellationToken)
+                    .ConfigureAwait(false);
                 if (seriesList != null)
                 {
                     foreach (JObject series in seriesList.OfType<JObject>())
@@ -191,7 +194,12 @@ public sealed class ServarrProgressService
                             continue;
                         }
 
-                        JArray? episodes = await GetJsonArrayAsync(client, $"episode?seriesId={seriesId.Value}", cancellationToken)
+                        JArray? episodes = await GetCachedJsonArrayAsync(
+                                client,
+                                $"servarr:sonarr:episodes:{seriesId.Value}",
+                                $"episode?seriesId={seriesId.Value}&includeEpisodeFile=true",
+                                LibraryCacheTtl(),
+                                cancellationToken)
                             .ConfigureAwait(false);
                         if (episodes != null)
                         {
@@ -220,7 +228,12 @@ public sealed class ServarrProgressService
                             continue;
                         }
 
-                        JArray? episodes = await GetJsonArrayAsync(client, $"episode?seriesId={seriesId.Value}", cancellationToken)
+                        JArray? episodes = await GetCachedJsonArrayAsync(
+                                client,
+                                $"servarr:sonarr:episodes:{seriesId.Value}",
+                                $"episode?seriesId={seriesId.Value}&includeEpisodeFile=true",
+                                LibraryCacheTtl(),
+                                cancellationToken)
                             .ConfigureAwait(false);
                         if (episodes != null)
                         {
@@ -277,7 +290,7 @@ public sealed class ServarrProgressService
             hasFile: movie.Value<bool?>("hasFile") ?? false,
             monitored: movie.Value<bool?>("monitored") ?? false,
             isUnreleased: IsUnreleasedMedia(movie.Value<string>("status")),
-            sizeOnDisk: movie.Value<long?>("sizeOnDisk") ?? 0,
+            sizeOnDisk: ReadMovieSizeBytes(movie),
             openUrl: BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(movie), isMovie: true));
     }
 
@@ -310,7 +323,8 @@ public sealed class ServarrProgressService
         if (episodes.Count == 0)
         {
             bool monitored = series.Value<bool?>("monitored") ?? false;
-            long sizeOnDisk = series.Value<long?>("sizeOnDisk") ?? 0;
+            JObject? stats = series.Value<JObject>("statistics");
+            long sizeOnDisk = stats?.Value<long?>("sizeOnDisk") ?? series.Value<long?>("sizeOnDisk") ?? 0;
             bool hasFile = sizeOnDisk > 0;
             return BuildLibraryProgress(hasFile, monitored, isUnreleased: false, sizeOnDisk, BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(series), isMovie: false));
         }
@@ -322,7 +336,7 @@ public sealed class ServarrProgressService
         bool allUnreleased = episodes.All(e =>
             IsUnreleasedMedia(e.Value<string>("airDateUtc") ?? e.Value<string>("airDate")));
         long totalSize = episodes.Where(e => e.Value<bool?>("hasFile") == true)
-            .Sum(e => e.Value<long?>("sizeOnDisk") ?? 0);
+            .Sum(ReadEpisodeSizeBytes);
         string? seriesOpenUrl = BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(series), isMovie: false);
 
         if (allUnreleased && !anyFile)
@@ -350,10 +364,10 @@ public sealed class ServarrProgressService
 
     private static ServarrProgressInfo BuildQueueProgress(IReadOnlyCollection<JObject> queueItems, string baseUrl, JObject? media, bool isMovie)
     {
-        double totalSize = queueItems.Sum(item => item.Value<double?>("size") ?? 0);
-        double sizeLeft = queueItems.Sum(item => item.Value<double?>("sizeleft") ?? 0);
-        double downloaded = Math.Max(0, totalSize - sizeLeft);
-        int percent = totalSize > 0 ? (int)Math.Round(downloaded / totalSize * 100) : 0;
+        long totalSize = queueItems.Sum(ReadQueueItemSizeBytes);
+        long sizeLeft = queueItems.Sum(ReadQueueItemSizeLeftBytes);
+        long downloaded = Math.Max(0, totalSize - sizeLeft);
+        int percent = totalSize > 0 ? (int)Math.Round(downloaded / (double)totalSize * 100) : 0;
         string? titleSlug = GetTitleSlug(media)
             ?? queueItems
                 .Select(item => GetTitleSlug(isMovie ? item["movie"] as JObject : item["series"] as JObject))
@@ -364,8 +378,8 @@ public sealed class ServarrProgressService
             StatusLabel = "Queued",
             StatusKey = "queued",
             Percent = percent,
-            DownloadedBytes = (long)downloaded,
-            TotalBytes = (long)totalSize,
+            DownloadedBytes = downloaded,
+            TotalBytes = totalSize,
             IsActive = true,
             OpenUrl = BuildServarrOpenUrl(baseUrl, titleSlug, isMovie)
         };
@@ -572,6 +586,101 @@ public sealed class ServarrProgressService
         HttpClient client = new() { BaseAddress = new Uri(normalized + "/api/v3/") };
         client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
         return client;
+    }
+
+    private static TimeSpan LibraryCacheTtl()
+    {
+        int seconds = Math.Clamp(JellySeerrPlugin.Instance.Configuration.ServarrCacheSeconds, 0, 3600);
+        return TimeSpan.FromSeconds(seconds);
+    }
+
+    private static TimeSpan QueueCacheTtl()
+    {
+        if (JellySeerrPlugin.Instance.Configuration.ServarrCacheSeconds <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return TimeSpan.FromSeconds(15);
+    }
+
+    private static long ReadMovieSizeBytes(JObject movie)
+    {
+        long sizeOnDisk = movie.Value<long?>("sizeOnDisk") ?? 0;
+        if (sizeOnDisk > 0)
+        {
+            return sizeOnDisk;
+        }
+
+        return movie.Value<JObject>("movieFile")?.Value<long?>("size") ?? 0;
+    }
+
+    private static long ReadEpisodeSizeBytes(JObject episode)
+    {
+        long sizeOnDisk = episode.Value<long?>("sizeOnDisk") ?? 0;
+        if (sizeOnDisk > 0)
+        {
+            return sizeOnDisk;
+        }
+
+        return episode.Value<JObject>("episodeFile")?.Value<long?>("size") ?? 0;
+    }
+
+    private static long ReadQueueItemSizeBytes(JObject item)
+    {
+        double size = item.Value<double?>("size") ?? 0;
+        return size > 0 ? (long)Math.Round(size) : 0;
+    }
+
+    private static long ReadQueueItemSizeLeftBytes(JObject item)
+    {
+        double sizeLeft = item.Value<double?>("sizeleft") ?? 0;
+        return sizeLeft > 0 ? (long)Math.Round(sizeLeft) : 0;
+    }
+
+    private async Task<JArray?> GetCachedJsonArrayAsync(
+        HttpClient client,
+        string cacheKey,
+        string path,
+        TimeSpan ttl,
+        CancellationToken cancellationToken)
+    {
+        if (ttl > TimeSpan.Zero && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JArray array)
+        {
+            return array;
+        }
+
+        JArray? fresh = await GetJsonArrayAsync(client, path, cancellationToken).ConfigureAwait(false);
+        if (fresh != null && ttl > TimeSpan.Zero)
+        {
+            JsonMemoryCache.Set(cacheKey, fresh, ttl);
+        }
+
+        return fresh;
+    }
+
+    private async Task<List<JObject>> FetchAllQueueRecordsCachedAsync(HttpClient client, bool includeMovie, CancellationToken cancellationToken)
+    {
+        string cacheKey = includeMovie ? "servarr:radarr:queue" : "servarr:sonarr:queue";
+        TimeSpan ttl = QueueCacheTtl();
+        if (ttl > TimeSpan.Zero && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JArray array)
+        {
+            return array.OfType<JObject>().ToList();
+        }
+
+        List<JObject> records = await FetchAllQueueRecordsAsync(client, includeMovie, cancellationToken).ConfigureAwait(false);
+        if (ttl > TimeSpan.Zero)
+        {
+            JArray payload = new();
+            foreach (JObject record in records)
+            {
+                payload.Add(record);
+            }
+
+            JsonMemoryCache.Set(cacheKey, payload, ttl);
+        }
+
+        return records;
     }
 
     private static void AddToLookup(Dictionary<int, List<JObject>> lookup, int key, JObject value)
