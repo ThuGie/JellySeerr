@@ -52,6 +52,8 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         _tabsEnsureQueued: false,
         _tabsEnsureQueueCount: 0,
         _ensureRetryTimers: null,
+        _cleanupTimer: null,
+        _homePageObserver: null,
 
         TAB_DEFS: {
             movies: { sectionClass: 'jellySeerr-movies-sections', defaultTitle: 'Movies' },
@@ -191,12 +193,13 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         },
 
         isHomeHash: function () {
-            const hash = window.location.hash || '';
+            const hash = String(window.location.hash || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
             return hash === '' ||
+                hash === '#' ||
                 hash === '#/home' ||
                 hash === '#/home.html' ||
-                hash.indexOf('#/home?') === 0 ||
-                hash.indexOf('#/home.html?') === 0;
+                hash === '#home' ||
+                hash === '#home.html';
         },
 
         isHomeViewEvent: function (event) {
@@ -209,7 +212,12 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     return true;
                 }
             }
-            return this.isHomeHash();
+            return false;
+        },
+
+        homePageExists: function () {
+            const page = document.getElementById('indexPage');
+            return !!(page && page.querySelector('#homeTab') && page.querySelector('#favoritesTab'));
         },
 
         isHomeTabContext: function () {
@@ -218,7 +226,12 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             }
 
             const page = document.getElementById('indexPage');
-            return !!(page && !page.classList.contains('hide'));
+            if (!page || page.classList.contains('hide')) {
+                return false;
+            }
+
+            const visiblePage = document.querySelector('.page:not(.hide)');
+            return !visiblePage || visiblePage.id === 'indexPage';
         },
 
         clearEnsureRetries: function () {
@@ -230,8 +243,9 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
         scheduleEnsureNativeTabs: function () {
             const self = this;
+            self.cancelHeaderCleanup();
             self.clearEnsureRetries();
-            [0, 75, 200, 500, 1200].forEach(function (delay) {
+            [0, 50, 150, 400, 900, 1800, 3500, 6000].forEach(function (delay) {
                 const timer = setTimeout(function () {
                     if (!self.isHomeHash()) {
                         return;
@@ -244,6 +258,24 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 }, delay);
                 self._ensureRetryTimers.push(timer);
             });
+        },
+
+        cancelHeaderCleanup: function () {
+            if (this._cleanupTimer) {
+                clearTimeout(this._cleanupTimer);
+                this._cleanupTimer = null;
+            }
+        },
+
+        scheduleHeaderCleanup: function () {
+            const self = this;
+            self.cancelHeaderCleanup();
+            self._cleanupTimer = setTimeout(function () {
+                self._cleanupTimer = null;
+                if (!self.isHomeHash()) {
+                    self.cleanupjellySeerrHeaderButtons();
+                }
+            }, 250);
         },
 
         cleanupjellySeerrHeaderButtons: function () {
@@ -557,9 +589,16 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         },
 
         findJellyfinTabButton: function (tabsSlider, kind) {
+            const marked = tabsSlider.querySelector('[data-jellySeerr-native="' + kind + '"]');
+            if (marked && marked.isConnected) {
+                return marked;
+            }
+
             const buttons = Array.from(tabsSlider.querySelectorAll('.emby-tab-button'));
             const native = buttons.filter(function (btn) {
-                return !btn.hasAttribute('data-jellySeerr-tab') && (btn.id || '').indexOf('customTabButton_') !== 0;
+                return !btn.hasAttribute('data-jellySeerr-tab') &&
+                    !btn.hasAttribute('data-jellySeerr-native') &&
+                    (btn.id || '').indexOf('customTabButton_') !== 0;
             });
 
             function buttonText(btn) {
@@ -567,30 +606,26 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 return ((label && label.textContent) || btn.textContent || '').trim().toLowerCase();
             }
 
+            let found = null;
             if (kind === 'home') {
-                const byLabel = native.find(function (btn) {
+                found = native.find(function (btn) {
                     return buttonText(btn) === 'home';
-                });
-                if (byLabel) {
-                    return byLabel;
-                }
-                const byIndex = native.find(function (btn) {
+                }) || native.find(function (btn) {
                     return btn.getAttribute('data-index') === '0';
-                });
-                return byIndex || native[0] || null;
+                }) || native[0] || null;
+            } else {
+                found = native.find(function (btn) {
+                    const text = buttonText(btn);
+                    return text === 'favorites' || text === 'favourites';
+                }) || native.find(function (btn) {
+                    return btn.getAttribute('data-index') === '1';
+                }) || native[1] || null;
             }
 
-            const byLabel = native.find(function (btn) {
-                const text = buttonText(btn);
-                return text === 'favorites' || text === 'favourites';
-            });
-            if (byLabel) {
-                return byLabel;
+            if (found) {
+                found.setAttribute('data-jellySeerr-native', kind);
             }
-            const byIndex = native.find(function (btn) {
-                return btn.getAttribute('data-index') === '1';
-            });
-            return byIndex || native[1] || null;
+            return found;
         },
 
         buildDesiredBarSlots: function (config) {
@@ -638,6 +673,13 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 const sf = btn.getAttribute('data-jellySeerr-tab');
                 if (sf) {
                     return 'js:' + sf;
+                }
+                const native = btn.getAttribute('data-jellySeerr-native');
+                if (native === 'home') {
+                    return 'jf:home';
+                }
+                if (native === 'favorites') {
+                    return 'jf:favorites';
                 }
                 const ct = /^customTabButton_(\d+)$/.exec(btn.id || '');
                 if (ct) {
@@ -710,7 +752,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
         applyBarOrder: function (page, tabsSlider, slots) {
             const self = this;
-            if (!self.isHomeTabContext() || !page || !tabsSlider) {
+            if (!self.isHomeHash() || !page || !tabsSlider) {
                 return false;
             }
 
@@ -732,7 +774,8 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     button = self.findJellyfinTabButton(tabsSlider, slot.id);
                     panel = slot.id === 'home' ? homeTab : favoritesTab;
                     if (!button || !panel) {
-                        continue;
+                        log.warn('native ' + slot.id + ' tab missing; skipping bar apply');
+                        return false;
                     }
                 } else if (slot.type === 'customtabs') {
                     button = document.getElementById('customTabButton_' + slot.index);
@@ -752,7 +795,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 planned.push({ slot: slot, button: button, panel: panel });
             }
 
-            if (!planned.length || !self.isHomeTabContext()) {
+            if (!planned.length || !self.isHomeHash()) {
                 return false;
             }
 
@@ -782,7 +825,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 orderedPanels.push(panel);
             });
 
-            if (!self.isHomeTabContext()) {
+            if (!self.isHomeHash()) {
                 return false;
             }
 
@@ -802,40 +845,28 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             }
 
             if (!self.isHomeHash()) {
-                self.cleanupjellySeerrHeaderButtons();
+                self.scheduleHeaderCleanup();
                 return Promise.resolve();
             }
 
-            if (!self.isHomeTabContext()) {
-                return Promise.resolve();
-            }
+            self.cancelHeaderCleanup();
 
             self._tabsEnsuring = self.loadTabConfig().then(function (config) {
                 if (!self.isHomeHash()) {
-                    self.cleanupjellySeerrHeaderButtons();
-                    return;
-                }
-
-                if (!self.isHomeTabContext()) {
-                    self._tabsEnsureQueued = true;
+                    self.scheduleHeaderCleanup();
                     return;
                 }
 
                 return self.waitForCustomTabs(config.customTabs, 20).then(function () {
                     if (!self.isHomeHash()) {
-                        self.cleanupjellySeerrHeaderButtons();
-                        return;
-                    }
-
-                    if (!self.isHomeTabContext()) {
-                        self._tabsEnsureQueued = true;
+                        self.scheduleHeaderCleanup();
                         return;
                     }
 
                     const page = document.getElementById('indexPage');
                     const tabsSlider = document.querySelector('.headerTabs .emby-tabs-slider');
                     const tabsEl = document.querySelector('.headerTabs [is="emby-tabs"]');
-                    if (!page || !tabsSlider || !tabsEl) {
+                    if (!page || !tabsSlider || !tabsEl || !self.homePageExists()) {
                         self._tabsEnsureQueued = true;
                         return;
                     }
@@ -887,7 +918,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 }
                 self._tabsEnsureQueued = false;
                 self._tabsEnsureQueueCount += 1;
-                if (self.isHomeHash() && self._tabsEnsureQueueCount < 8) {
+                if (self.isHomeHash() && self._tabsEnsureQueueCount < 16) {
                     return self.ensureNativeTabs();
                 }
                 self._tabsEnsureQueueCount = 0;
@@ -901,15 +932,13 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             log.info('native tab watchers ready');
 
             document.addEventListener('viewshow', function (event) {
-                if (self.isHomeViewEvent(event)) {
+                if (self.isHomeViewEvent(event) || self.isHomeHash()) {
                     self.scheduleEnsureNativeTabs();
                     return;
                 }
 
-                if (!self.isHomeHash()) {
-                    self.cleanupjellySeerrHeaderButtons();
-                    self.scheduleRender();
-                }
+                self.scheduleHeaderCleanup();
+                self.scheduleRender();
             });
 
             window.addEventListener('hashchange', function () {
@@ -917,26 +946,64 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     self.scheduleEnsureNativeTabs();
                     return;
                 }
-                self.cleanupjellySeerrHeaderButtons();
+                self.scheduleHeaderCleanup();
+            });
+
+            window.addEventListener('pageshow', function () {
+                if (self.isHomeHash()) {
+                    self.scheduleEnsureNativeTabs();
+                }
             });
 
             if (!self._ctButtonObserver && typeof MutationObserver !== 'undefined') {
+                const bindHeaderObserver = function () {
+                    const header = document.querySelector('.skinHeader');
+                    const root = header || document.body;
+                    if (self._headerObserveRoot === root) {
+                        return;
+                    }
+                    self._headerObserveRoot = root;
+                    self._ctButtonObserver.disconnect();
+                    self._ctButtonObserver.observe(root, { childList: true, subtree: true });
+                };
+
                 self._ctButtonObserver = new MutationObserver(function () {
                     if (self._ctObserveTimer) {
                         clearTimeout(self._ctObserveTimer);
                     }
                     self._ctObserveTimer = setTimeout(function () {
+                        bindHeaderObserver();
                         if (self.isHomeHash()) {
                             self.ensureNativeTabs();
                         } else {
-                            self.cleanupjellySeerrHeaderButtons();
+                            self.scheduleHeaderCleanup();
                         }
-                    }, 250);
+                    }, 150);
                 });
-                const observeRoot = document.querySelector('.skinHeader') || document.body;
-                if (observeRoot) {
-                    self._ctButtonObserver.observe(observeRoot, { childList: true, subtree: true });
+                bindHeaderObserver();
+
+                if (document.body) {
+                    self._bodyObserver = new MutationObserver(bindHeaderObserver);
+                    self._bodyObserver.observe(document.body, { childList: true });
                 }
+            }
+
+            if (!self._homePageObserver && typeof MutationObserver !== 'undefined') {
+                self._homePageObserver = new MutationObserver(function () {
+                    if (self.isHomeHash()) {
+                        self.scheduleEnsureNativeTabs();
+                    }
+                });
+                const attachHomeObserver = function () {
+                    const page = document.getElementById('indexPage');
+                    if (page && page !== self._homePageObserverTarget) {
+                        self._homePageObserver.disconnect();
+                        self._homePageObserver.observe(page, { attributes: true, attributeFilter: ['class'] });
+                        self._homePageObserverTarget = page;
+                    }
+                };
+                attachHomeObserver();
+                document.addEventListener('viewshow', attachHomeObserver);
             }
         },
 
@@ -3487,8 +3554,11 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
     }
 
     window.addEventListener('popstate', function () {
-        log.info('popstate. rebooting');
-        setTimeout(boot, 800);
+        log.info('popstate. restoring tabs');
+        if (window.jellySeerrPlugin) {
+            window.jellySeerrPlugin.scheduleEnsureNativeTabs();
+        }
+        setTimeout(boot, 400);
     });
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden && window.jellySeerrPlugin) {

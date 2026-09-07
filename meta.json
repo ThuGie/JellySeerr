@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Hide Seerr and *arr links from remote users. Request and discover cards now show play, status, quota, and season state.",
+  "changelog": "Keep Movies, TV, and Requests on the home tab bar after back navigation.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-07T00:00:00.0000000Z",
-  "version": "1.0.2.0",
+  "version": "1.0.3.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [
