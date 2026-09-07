@@ -204,7 +204,9 @@ public sealed class ServarrProgressService
                     ["downloadedBytes"] = progress.DownloadedBytes,
                     ["totalBytes"] = progress.TotalBytes,
                     ["isActive"] = progress.IsActive,
-                    ["openUrl"] = progress.OpenUrl
+                    ["openUrl"] = progress.OpenUrl,
+                    ["qualityLabel"] = progress.QualityLabel,
+                    ["qualityName"] = progress.QualityName
                 };
             }
         }
@@ -422,7 +424,9 @@ public sealed class ServarrProgressService
 
         if (queueItems.Count > 0)
         {
-            return BuildQueueProgress(queueItems, snapshot.BaseUrl, movie, isMovie: true);
+            return WithFileQuality(
+                BuildQueueProgress(queueItems, snapshot.BaseUrl, movie, isMovie: true),
+                ReadArrQuality(queueItems[0]["quality"] as JObject));
         }
 
         if (movie == null)
@@ -430,12 +434,14 @@ public sealed class ServarrProgressService
             return null;
         }
 
-        return BuildLibraryProgress(
-            hasFile: movie.Value<bool?>("hasFile") ?? false,
-            monitored: movie.Value<bool?>("monitored") ?? false,
-            isUnreleased: IsUnreleasedMedia(movie.Value<string>("status")),
-            sizeOnDisk: ReadMovieSizeBytes(movie),
-            openUrl: BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(movie), isMovie: true));
+        return WithFileQuality(
+            BuildLibraryProgress(
+                hasFile: movie.Value<bool?>("hasFile") ?? false,
+                monitored: movie.Value<bool?>("monitored") ?? false,
+                isUnreleased: IsUnreleasedMedia(movie.Value<string>("status")),
+                sizeOnDisk: ReadMovieSizeBytes(movie),
+                openUrl: BuildServarrOpenUrl(snapshot.BaseUrl, GetTitleSlug(movie), isMovie: true)),
+            ReadArrQuality(movie.Value<JObject>("movieFile")?["quality"] as JObject));
     }
 
     private static ServarrProgressInfo? BuildSeriesProgress(ServarrRequestContext context, SonarrSnapshot? snapshot)
@@ -455,34 +461,40 @@ public sealed class ServarrProgressService
         List<JObject> queueItems = seriesId.HasValue && snapshot.QueueBySeriesId.TryGetValue(seriesId.Value, out List<JObject>? queued)
             ? FilterQueueBySeasons(queued, context.SeasonNumbers)
             : new List<JObject>();
+        List<JObject> episodes = seriesId.HasValue && snapshot.EpisodesBySeriesId.TryGetValue(seriesId.Value, out List<JObject>? eps)
+            ? FilterEpisodesBySeasons(eps, context.SeasonNumbers)
+            : new List<JObject>();
+
+        ServarrProgressInfo? AttachQuality(ServarrProgressInfo? progress) =>
+            WithFileQuality(
+                progress,
+                queueItems.Count > 0
+                    ? ReadArrQuality(queueItems[0]["quality"] as JObject)
+                    : ReadEpisodeFileQuality(episodes));
 
         if (queueItems.Count > 0)
         {
-            return BuildQueueProgress(queueItems, snapshot.BaseUrl, series, isMovie: false);
+            return AttachQuality(BuildQueueProgress(queueItems, snapshot.BaseUrl, series, isMovie: false));
         }
 
         ServarrProgressInfo? fromSeasons = BuildFromSeriesSeasons(series, context.SeasonNumbers, seriesOpenUrl);
         if (fromSeasons != null && HasLibraryFiles(fromSeasons))
         {
-            return fromSeasons;
+            return AttachQuality(fromSeasons);
         }
-
-        List<JObject> episodes = seriesId.HasValue && snapshot.EpisodesBySeriesId.TryGetValue(seriesId.Value, out List<JObject>? eps)
-            ? FilterEpisodesBySeasons(eps, context.SeasonNumbers)
-            : new List<JObject>();
 
         if (episodes.Count == 0)
         {
             if (fromSeasons != null)
             {
-                return fromSeasons;
+                return AttachQuality(fromSeasons);
             }
 
             bool monitored = series.Value<bool?>("monitored") ?? false;
             JObject? stats = series.Value<JObject>("statistics");
             long sizeOnDisk = stats?.Value<long?>("sizeOnDisk") ?? series.Value<long?>("sizeOnDisk") ?? 0;
             bool hasFile = sizeOnDisk > 0;
-            return BuildLibraryProgress(hasFile, monitored, isUnreleased: false, sizeOnDisk, seriesOpenUrl);
+            return AttachQuality(BuildLibraryProgress(hasFile, monitored, isUnreleased: false, sizeOnDisk, seriesOpenUrl));
         }
 
         List<JObject> countable = episodes.Where(CountsTowardLibraryProgress).ToList();
@@ -495,32 +507,32 @@ public sealed class ServarrProgressService
         {
             if (anyFile)
             {
-                return BuildLibraryProgress(true, anyMonitored, false, totalSize, seriesOpenUrl);
+                return AttachQuality(BuildLibraryProgress(true, anyMonitored, false, totalSize, seriesOpenUrl));
             }
 
             if (fromSeasons != null)
             {
-                return fromSeasons;
+                return AttachQuality(fromSeasons);
             }
 
             bool allUnreleased = episodes.All(e =>
                 IsUnreleasedMedia(e.Value<string>("airDateUtc") ?? e.Value<string>("airDate")));
-            return BuildLibraryProgress(false, anyMonitored, allUnreleased, 0, seriesOpenUrl);
+            return AttachQuality(BuildLibraryProgress(false, anyMonitored, allUnreleased, 0, seriesOpenUrl));
         }
 
         int fileCount = countable.Count(e => e.Value<bool?>("hasFile") == true);
         bool allHaveFiles = fileCount == countable.Count;
         if (anyFile && !allHaveFiles)
         {
-            return BuildPartialProgress(fileCount, countable.Count, totalSize, seriesOpenUrl);
+            return AttachQuality(BuildPartialProgress(fileCount, countable.Count, totalSize, seriesOpenUrl));
         }
 
         if (allHaveFiles)
         {
-            return BuildLibraryProgress(true, anyMonitored, false, totalSize, seriesOpenUrl);
+            return AttachQuality(BuildLibraryProgress(true, anyMonitored, false, totalSize, seriesOpenUrl));
         }
 
-        return fromSeasons ?? BuildLibraryProgress(false, anyMonitored, false, 0, seriesOpenUrl);
+        return AttachQuality(fromSeasons ?? BuildLibraryProgress(false, anyMonitored, false, 0, seriesOpenUrl));
     }
 
     private static bool HasLibraryFiles(ServarrProgressInfo progress) =>
@@ -907,6 +919,74 @@ public sealed class ServarrProgressService
         return TimeSpan.FromSeconds(15);
     }
 
+    private static ServarrProgressInfo? WithFileQuality(ServarrProgressInfo? progress, (string? Name, string? Label) quality)
+    {
+        if (progress == null || string.IsNullOrWhiteSpace(quality.Label))
+        {
+            return progress;
+        }
+
+        progress.QualityName = quality.Name;
+        progress.QualityLabel = quality.Label;
+        return progress;
+    }
+
+    private static (string? Name, string? Label) ReadArrQuality(JObject? quality)
+    {
+        JObject? inner = quality?["quality"] as JObject ?? quality;
+        if (inner == null)
+        {
+            return (null, null);
+        }
+
+        string? name = inner.Value<string>("name");
+        string? label = QualityLabelHelper.FromResolution(inner.Value<int?>("resolution"))
+            ?? QualityLabelHelper.Parse(name);
+        return (name, label);
+    }
+
+    private static (string? Name, string? Label) ReadEpisodeFileQuality(IEnumerable<JObject> episodes)
+    {
+        List<(string? Name, string? Label)> qualities = episodes
+            .Select(episode => ReadArrQuality(episode.Value<JObject>("episodeFile")?["quality"] as JObject))
+            .Where(quality => !string.IsNullOrWhiteSpace(quality.Label))
+            .ToList();
+
+        if (qualities.Count == 0)
+        {
+            return (null, null);
+        }
+
+        List<string> labels = qualities
+            .Select(quality => quality.Label!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        string highest = HighestQualityLabel(labels);
+        (string? Name, string? Label) match = qualities.FirstOrDefault(quality =>
+            string.Equals(quality.Label, highest, StringComparison.OrdinalIgnoreCase));
+
+        if (labels.Count == 1)
+        {
+            return match;
+        }
+
+        return (match.Name, $"{highest} (mixed)");
+    }
+
+    private static string HighestQualityLabel(IReadOnlyList<string> labels)
+    {
+        string[] order = ["4K", "2K", "1080p", "720p", "SD"];
+        foreach (string candidate in order)
+        {
+            if (labels.Any(label => label.StartsWith(candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                return candidate;
+            }
+        }
+
+        return labels[0];
+    }
+
     private static long ReadMovieSizeBytes(JObject movie)
     {
         long sizeOnDisk = movie.Value<long?>("sizeOnDisk") ?? 0;
@@ -1031,5 +1111,9 @@ public sealed class ServarrProgressService
         public bool IsActive { get; set; }
 
         public string? OpenUrl { get; set; }
+
+        public string? QualityLabel { get; set; }
+
+        public string? QualityName { get; set; }
     }
 }

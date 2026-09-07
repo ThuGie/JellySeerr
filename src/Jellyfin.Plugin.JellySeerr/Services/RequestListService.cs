@@ -22,13 +22,20 @@ public class RequestListService
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly ServarrProgressService _servarrProgressService;
+    private readonly QualityCatalogService _qualityCatalogService;
 
-    public RequestListService(ILogger<RequestListService> logger, ILibraryManager libraryManager, IUserManager userManager, ServarrProgressService servarrProgressService)
+    public RequestListService(
+        ILogger<RequestListService> logger,
+        ILibraryManager libraryManager,
+        IUserManager userManager,
+        ServarrProgressService servarrProgressService,
+        QualityCatalogService qualityCatalogService)
     {
         _logger = logger;
         _libraryManager = libraryManager;
         _userManager = userManager;
         _servarrProgressService = servarrProgressService;
+        _qualityCatalogService = qualityCatalogService;
     }
 
     public async Task<(int StatusCode, string Body)> GetRequestsAsync(
@@ -339,6 +346,11 @@ public class RequestListService
         int? externalServiceId = is4k
             ? media?.Value<int?>("externalServiceId4k") ?? media?.Value<int?>("externalServiceId")
             : media?.Value<int?>("externalServiceId");
+        string? profileName = _qualityCatalogService.ResolveProfileName(
+            req.Value<int?>("serverId"),
+            req.Value<int?>("profileId"),
+            req.Value<string>("profileName"));
+        string? qualityLabel = QualityLabelHelper.FromProfile(profileName, is4k);
 
         JObject mapped = new()
         {
@@ -367,6 +379,8 @@ public class RequestListService
             ["profileId"] = req["profileId"],
             ["serverId"] = req["serverId"],
             ["rootFolder"] = req["rootFolder"],
+            ["profileName"] = profileName,
+            ["qualityLabel"] = qualityLabel,
             ["isPending"] = requestStatus == 1,
             ["isFailed"] = requestStatus == 4
         };

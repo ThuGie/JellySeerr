@@ -503,7 +503,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
             downloadedBytes: raw.downloadedBytes ?? raw.DownloadedBytes ?? 0,
             totalBytes: raw.totalBytes ?? raw.TotalBytes ?? 0,
             isActive: raw.isActive ?? raw.IsActive ?? false,
-            openUrl: raw.openUrl || raw.OpenUrl || ''
+            openUrl: raw.openUrl || raw.OpenUrl || '',
+            qualityLabel: raw.qualityLabel || raw.QualityLabel || '',
+            qualityName: raw.qualityName || raw.QualityName || ''
         };
     }
 
@@ -527,7 +529,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 : (isQueued ? `${percent}%` : (progress.statusLabel || '')));
         const detailText = isFailed
             ? 'Failed to find content'
-            : (isMissing ? 'No downloads' : sizeText);
+            : (isMissing ? 'No downloads' : [progress.qualityLabel, sizeText].filter(Boolean).join(' · '));
 
         const openUrl = canOpenLocalServices() ? (progress.openUrl || '') : '';
         const openAttr = openUrl ? ` data-open-url="${escapeHtml(openUrl)}" role="link"` : '';
@@ -557,8 +559,12 @@ window.jellySeerrLog = window.jellySeerrLog || {
             `<span class="jellySeerr-request-chip ${chipClassForStatus(statusLabel)}">${escapeHtml(statusLabel)}</span>`
         ];
 
-        if (item.is4k) {
-            chips.push('<span class="jellySeerr-request-chip jellySeerr-request-chip--4k">4K</span>');
+        const requestedQuality = item.qualityLabel || item.QualityLabel || (item.is4k ? '4K' : '');
+        if (requestedQuality) {
+            const qualityClass = /^4k|^2k/i.test(String(requestedQuality))
+                ? 'jellySeerr-request-chip--4k'
+                : 'jellySeerr-request-chip--quality';
+            chips.push(`<span class="jellySeerr-request-chip ${qualityClass}">${escapeHtml(requestedQuality)}</span>`);
         }
 
         if (item.type) {

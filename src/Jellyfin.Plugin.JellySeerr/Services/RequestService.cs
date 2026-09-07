@@ -125,6 +125,14 @@ public class RequestService
             return Unmapped();
         }
 
+        JObject? existing = await LoadRequestAsync(requestId, user.Id, cancellationToken).ConfigureAwait(false);
+        ApplyExistingRequest(payload, existing);
+
+        if (string.IsNullOrWhiteSpace(payload.MediaType))
+        {
+            return (400, "{\"message\":\"A media type is required to change this request.\"}", "application/json");
+        }
+
         ApplyProfileDefaults(payload, JellySeerrPlugin.Instance.Configuration);
         if (payload.ServerId != null && payload.ProfileId != null &&
             !_quality.IsAllowed(payload.ServerId.Value, payload.ProfileId.Value, payload.MediaType, payload.Is4k))
@@ -312,12 +320,69 @@ public class RequestService
         _ = canPick;
     }
 
+    private async Task<JObject?> LoadRequestAsync(int requestId, int seerrUserId, CancellationToken cancellationToken)
+    {
+        JToken? token = await _seerr
+            .GetJsonAsync($"/api/v1/request/{requestId}", seerrUserId, cancellationToken)
+            .ConfigureAwait(false);
+        return token as JObject;
+    }
+
+    private static void ApplyExistingRequest(RequestPayload payload, JObject? existing)
+    {
+        if (existing == null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.MediaType))
+        {
+            payload.MediaType = existing.Value<string>("type")
+                ?? existing.Value<JObject>("media")?.Value<string>("mediaType")
+                ?? string.Empty;
+        }
+
+        if (payload.MediaId <= 0)
+        {
+            payload.MediaId = existing.Value<JObject>("media")?.Value<int?>("tmdbId") ?? 0;
+        }
+
+        if (string.Equals(payload.MediaType, "tv", StringComparison.OrdinalIgnoreCase)
+            && (payload.Seasons == null || payload.Seasons.Count == 0))
+        {
+            payload.Seasons = ReadSeasonNumbers(existing);
+        }
+    }
+
+    private static List<int>? ReadSeasonNumbers(JObject request)
+    {
+        JArray? seasons = request.Value<JArray>("seasons");
+        if (seasons == null || seasons.Count == 0)
+        {
+            return null;
+        }
+
+        List<int> numbers = seasons
+            .Select(token => token.Type == JTokenType.Integer
+                ? token.Value<int>()
+                : (token as JObject)?.Value<int?>("seasonNumber"))
+            .Where(n => n.HasValue && n.Value > 0)
+            .Select(n => n!.Value)
+            .Distinct()
+            .ToList();
+        return numbers.Count > 0 ? numbers : null;
+    }
+
     private static JObject BuildRequestBody(RequestPayload payload, bool includeMedia = true)
     {
         JObject body = new();
-        if (includeMedia)
+        if (!string.IsNullOrWhiteSpace(payload.MediaType))
         {
             body["mediaType"] = payload.MediaType;
+        }
+
+        if (includeMedia)
+        {
             body["mediaId"] = payload.MediaId;
         }
 

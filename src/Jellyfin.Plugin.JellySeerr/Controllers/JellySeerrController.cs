@@ -384,7 +384,13 @@ public class JellySeerrController : ControllerBase
     public ActionResult GetDetails(string mediaType, int mediaId, [FromServices] IUserManager userManager)
     {
         JObject? details = _discoveryService.GetMediaDetails(GetUsername(userManager) ?? string.Empty, mediaType, mediaId);
-        return details == null ? NotFound() : Content(details.ToString(), "application/json");
+        if (details == null)
+        {
+            return NotFound();
+        }
+
+        _qualityCatalogService.AnnotateRequestProfiles(details);
+        return Content(details.ToString(), "application/json");
     }
 
     [HttpGet("library-item/{mediaType}/{tmdbId:int}")]

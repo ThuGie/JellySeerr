@@ -7,8 +7,34 @@ public class RequestPayload
     [JsonPropertyName("MediaType")]
     public string MediaType { get; set; } = string.Empty;
 
+    [JsonPropertyName("mediaType")]
+    public string MediaTypeCamel
+    {
+        get => MediaType;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                MediaType = value;
+            }
+        }
+    }
+
     [JsonPropertyName("MediaId")]
     public int MediaId { get; set; }
+
+    [JsonPropertyName("mediaId")]
+    public int MediaIdCamel
+    {
+        get => MediaId;
+        set
+        {
+            if (value > 0)
+            {
+                MediaId = value;
+            }
+        }
+    }
 
     [JsonPropertyName("ServerId")]
     public int? ServerId { get; set; }

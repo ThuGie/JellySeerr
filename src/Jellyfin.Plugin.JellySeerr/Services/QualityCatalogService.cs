@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.JellySeerr.Configuration;
+using Jellyfin.Plugin.JellySeerr.Helpers;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -102,6 +103,71 @@ public class QualityCatalogService
     public bool IsAllowed(int serverId, int profileId, string mediaType, bool is4k)
     {
         return GetEnabled(mediaType, is4k).Any(p => p.ServerId == serverId && p.ProfileId == profileId);
+    }
+
+    public QualityProfileEntry? Find(int? serverId, int? profileId)
+    {
+        if (profileId == null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<QualityProfileEntry> profiles = JellySeerrPlugin.Instance.Configuration.QualityProfiles
+            ?? new List<QualityProfileEntry>();
+        IEnumerable<QualityProfileEntry> matches = profiles.Where(p => p.ProfileId == profileId.Value);
+        if (serverId.HasValue)
+        {
+            QualityProfileEntry? exact = matches.FirstOrDefault(p => p.ServerId == serverId.Value);
+            if (exact != null)
+            {
+                return exact;
+            }
+        }
+
+        return matches.FirstOrDefault();
+    }
+
+    public string? ResolveProfileName(int? serverId, int? profileId, string? existingName = null)
+    {
+        if (!string.IsNullOrWhiteSpace(existingName))
+        {
+            return existingName;
+        }
+
+        QualityProfileEntry? profile = Find(serverId, profileId);
+        if (profile == null)
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(profile.DisplayName) ? profile.ProfileName : profile.DisplayName;
+    }
+
+    public void AnnotateRequestProfiles(JObject details)
+    {
+        JArray? requests = details.Value<JObject>("mediaInfo")?.Value<JArray>("requests");
+        if (requests == null)
+        {
+            return;
+        }
+
+        foreach (JObject request in requests.OfType<JObject>())
+        {
+            string? profileName = ResolveProfileName(
+                request.Value<int?>("serverId"),
+                request.Value<int?>("profileId"),
+                request.Value<string>("profileName"));
+            if (!string.IsNullOrWhiteSpace(profileName))
+            {
+                request["profileName"] = profileName;
+            }
+
+            string? qualityLabel = QualityLabelHelper.FromProfile(profileName, request.Value<bool?>("is4k") == true);
+            if (!string.IsNullOrWhiteSpace(qualityLabel))
+            {
+                request["qualityLabel"] = qualityLabel;
+            }
+        }
     }
 
     public JArray ToRequestOptions(IEnumerable<QualityProfileEntry> profiles)

@@ -810,9 +810,59 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return seasons.sort(function (a, b) { return a - b; });
     }
 
+    function parseResolutionLabel(profileName, is4k) {
+        const text = String(profileName || '').toLowerCase();
+        if (/2160|3840|\b4k\b|\buhd\b|ultra[\s-]?hd/.test(text)) {
+            return '4K';
+        }
+        if (/1440|2560|\b2k\b|\bqhd\b/.test(text)) {
+            return '2K';
+        }
+        if (/1080|1920|\bfhd\b|full[\s-]?hd/.test(text)) {
+            return '1080p';
+        }
+        if (/720|1280/.test(text)) {
+            return '720p';
+        }
+        if (/(?:^|[^a-z0-9])(?:576|480|360|sd|dvd|sdtv)(?:[^a-z0-9]|$)/.test(text)) {
+            return 'SD';
+        }
+        return is4k ? '4K' : '';
+    }
+
+    function qualityLabelFromRequest(req) {
+        const existing = req && (req.qualityLabel || req.QualityLabel);
+        if (existing) {
+            return existing;
+        }
+        return parseResolutionLabel(req && (req.profileName || req.ProfileName), requestIs4k(req));
+    }
+
+    function sameQualityText(quality, profile) {
+        if (!quality || !profile) {
+            return false;
+        }
+        const normalize = function (value) {
+            return String(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+        };
+        const nq = normalize(quality);
+        const np = normalize(profile);
+        return nq === np || np === nq + 'p';
+    }
+
     function formatRequestSummary(req, mediaType) {
         const parts = [];
-        parts.push(requestIs4k(req) ? '4K' : 'HD');
+        const quality = qualityLabelFromRequest(req);
+        const profile = req && (req.profileName || req.ProfileName);
+        if (quality) {
+            parts.push(quality);
+        }
+        if (profile && !sameQualityText(quality, profile)) {
+            parts.push(profile);
+        }
+        if (!quality && !profile) {
+            parts.push(requestIs4k(req) ? '4K' : 'Requested');
+        }
         const seasons = requestSeasonNumbers(req);
         if (mediaType === 'tv' && seasons.length) {
             parts.push(seasons.length === 1 ? ('Season ' + seasons[0]) : ('Seasons ' + seasons.join(', ')));
@@ -824,10 +874,6 @@ window.jellySeerrLog = window.jellySeerrLog || {
         const by = requestOwnerName(req);
         if (by) {
             parts.push('Requested by ' + by);
-        }
-        const profile = req && (req.profileName || req.ProfileName);
-        if (profile) {
-            parts.push(profile);
         }
         return parts.join(' · ');
     }
@@ -1307,7 +1353,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
     function submitRequest(mediaId, mediaType, option, onSuccess, onError) {
         const payload = {
             MediaType: mediaType,
+            mediaType: mediaType,
             MediaId: parseInt(mediaId, 10),
+            mediaId: parseInt(mediaId, 10),
             Is4k: !!option.is4k
         };
 
