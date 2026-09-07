@@ -60,36 +60,33 @@ public class ConnectionService
     public async Task<object> TestConnectionAsync(CancellationToken cancellationToken)
     {
         PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
-        if (!_seerr.IsConfigured(config))
+        ConnectionCheckResult seerr = await TestSeerrAsync(config, cancellationToken).ConfigureAwait(false);
+        ConnectionCheckResult radarr = await TestArrAsync("Radarr", config.RadarrUrl, config.RadarrApiKey, cancellationToken).ConfigureAwait(false);
+        ConnectionCheckResult sonarr = await TestArrAsync("Sonarr", config.SonarrUrl, config.SonarrApiKey, cancellationToken).ConfigureAwait(false);
+
+        List<string> messages = new();
+        messages.Add(seerr.Message);
+        if (radarr.Configured)
         {
-            return new { ok = false, message = "Enter a Seerr URL and API key first." };
+            messages.Add(radarr.Message);
         }
 
-        try
+        if (sonarr.Configured)
         {
-            JToken? status = await _seerr.GetJsonAsync("/api/v1/status", null, cancellationToken).ConfigureAwait(false);
-            JToken? me = await _seerr.GetJsonAsync("/api/v1/auth/me", null, cancellationToken).ConfigureAwait(false);
-            if (status == null && me == null)
-            {
-                return new { ok = false, message = "Seerr did not respond. Check the URL, API key, and that Jellyfin can reach Seerr." };
-            }
+            messages.Add(sonarr.Message);
+        }
 
-            string? version = (status as JObject)?.Value<string>("version")
-                ?? (me as JObject)?.Value<string>("displayName");
-            return new
-            {
-                ok = true,
-                message = string.IsNullOrWhiteSpace(version) ? "Connected to Seerr." : $"Connected to Seerr {version}.",
-                version,
-                fileTransformation = FileTransformationPresent(),
-                profileCount = (config.QualityProfiles ?? new List<QualityProfileEntry>()).Count(p => p.Enabled)
-            };
-        }
-        catch (Exception ex)
+        return new
         {
-            _logger.LogWarning(ex, "JS • Seerr connection test failed");
-            return new { ok = false, message = ex.Message };
-        }
+            ok = seerr.Ok,
+            message = string.Join(" ", messages),
+            version = seerr.Version,
+            fileTransformation = FileTransformationPresent(),
+            profileCount = (config.QualityProfiles ?? new List<QualityProfileEntry>()).Count(p => p.Enabled),
+            seerr,
+            radarr,
+            sonarr
+        };
     }
 
     public async Task<object> GetHealthAsync(CancellationToken cancellationToken)
@@ -109,6 +106,8 @@ public class ConnectionService
         return new
         {
             seerrConfigured = _seerr.IsConfigured(config),
+            radarrConfigured = IsArrConfigured(config.RadarrUrl, config.RadarrApiKey),
+            sonarrConfigured = IsArrConfigured(config.SonarrUrl, config.SonarrApiKey),
             fileTransformation = FileTransformationPresent(),
             seerrFinImportAvailable = File.Exists(SeerrFinConfigPath()),
             enabledProfiles = (config.QualityProfiles ?? new List<QualityProfileEntry>()).Count(p => p.Enabled),
@@ -164,4 +163,77 @@ public class ConnectionService
         string? value = root.Element(name)?.Value;
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
+
+    private async Task<ConnectionCheckResult> TestSeerrAsync(PluginConfiguration config, CancellationToken cancellationToken)
+    {
+        if (!_seerr.IsConfigured(config))
+        {
+            return new ConnectionCheckResult(false, false, "Enter a Seerr URL and API key first.");
+        }
+
+        try
+        {
+            JToken? status = await _seerr.GetJsonAsync("/api/v1/status", null, cancellationToken).ConfigureAwait(false);
+            JToken? me = await _seerr.GetJsonAsync("/api/v1/auth/me", null, cancellationToken).ConfigureAwait(false);
+            if (status == null && me == null)
+            {
+                return new ConnectionCheckResult(true, false, "Seerr did not respond. Check the URL, API key, and that Jellyfin can reach Seerr.");
+            }
+
+            string? version = (status as JObject)?.Value<string>("version")
+                ?? (me as JObject)?.Value<string>("displayName");
+            return new ConnectionCheckResult(
+                true,
+                true,
+                string.IsNullOrWhiteSpace(version) ? "Connected to Seerr." : $"Connected to Seerr {version}.",
+                version);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "JS • Seerr connection test failed");
+            return new ConnectionCheckResult(true, false, "Seerr: " + ex.Message);
+        }
+    }
+
+    private async Task<ConnectionCheckResult> TestArrAsync(string name, string? url, string? apiKey, CancellationToken cancellationToken)
+    {
+        if (!IsArrConfigured(url, apiKey))
+        {
+            return new ConnectionCheckResult(false, false, $"{name} is not configured.");
+        }
+
+        try
+        {
+            using HttpClient client = new()
+            {
+                BaseAddress = new Uri(url!.Trim().TrimEnd('/') + "/api/v3/"),
+                Timeout = TimeSpan.FromSeconds(8)
+            };
+            client.DefaultRequestHeaders.Add("X-Api-Key", apiKey!.Trim());
+            using HttpResponseMessage response = await client.GetAsync("system/status", cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new ConnectionCheckResult(true, false, $"{name} returned {(int)response.StatusCode}.");
+            }
+
+            string raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            JObject json = JObject.Parse(raw);
+            string? version = json.Value<string>("version") ?? json.Value<string>("instanceName");
+            return new ConnectionCheckResult(
+                true,
+                true,
+                string.IsNullOrWhiteSpace(version) ? $"Connected to {name}." : $"Connected to {name} {version}.",
+                version);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "JS • {Name} connection test failed", name);
+            return new ConnectionCheckResult(true, false, $"{name}: {ex.Message}");
+        }
+    }
+
+    private static bool IsArrConfigured(string? url, string? apiKey) =>
+        !string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(apiKey);
 }
+
+public sealed record ConnectionCheckResult(bool Configured, bool Ok, string Message, string? Version = null);

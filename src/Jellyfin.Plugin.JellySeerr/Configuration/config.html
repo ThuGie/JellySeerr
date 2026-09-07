@@ -261,6 +261,7 @@
         .jellySeerr-chip { font-size: .82em; padding: .3em .75em; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.18); }
         .jellySeerr-chip.is-ok { border-color: rgba(76,175,80,.7); color: #81c784; }
         .jellySeerr-chip.is-bad { border-color: rgba(244,67,54,.7); color: #ef9a9a; }
+        .jellySeerr-chip.is-muted { border-color: rgba(255,255,255,.18); color: rgba(255,255,255,.55); }
         .jellySeerr-quality-table, .jellySeerr-user-table { margin-top: 1em; overflow-x: auto; }
         .jellySeerr-quality-table table, .jellySeerr-user-table table { width: 100%; border-collapse: collapse; }
         .jellySeerr-quality-table th, .jellySeerr-quality-table td, .jellySeerr-user-table th, .jellySeerr-user-table td { text-align: left; padding: .55em .5em; border-bottom: 1px solid rgba(255,255,255,.1); vertical-align: top; }
@@ -349,29 +350,44 @@
                 const host = $('jsStatusChips');
                 if (!host) return;
                 const test = pick(health, 'test', 'Test') || {};
-                const testOk = pick(test, 'ok', 'Ok') === true;
-                const configured = pick(health, 'seerrConfigured', 'SeerrConfigured') === true;
+                const seerrCheck = pick(test, 'seerr', 'Seerr') || {};
+                const radarrCheck = pick(test, 'radarr', 'Radarr') || {};
+                const sonarrCheck = pick(test, 'sonarr', 'Sonarr') || {};
+                const testOk = pick(seerrCheck, 'ok', 'Ok') === true || pick(test, 'ok', 'Ok') === true;
+                const configured = pick(health, 'seerrConfigured', 'SeerrConfigured') === true || pick(seerrCheck, 'configured', 'Configured') === true;
                 let fileTransformation = pick(health, 'fileTransformation', 'FileTransformation') === true;
                 const enabledProfiles = Number(pick(health, 'enabledProfiles', 'EnabledProfiles') || 0);
                 const chips = [
-                    { ok: configured && testOk, label: testOk ? 'Seerr connected' : 'Seerr not connected' },
-                    { ok: fileTransformation, label: fileTransformation ? 'File Transformation' : 'File Transformation missing' },
-                    { ok: enabledProfiles > 0, label: enabledProfiles + ' profiles enabled' }
+                    serviceChip('Seerr', seerrCheck, configured, testOk),
+                    serviceChip('Radarr', radarrCheck, pick(health, 'radarrConfigured', 'RadarrConfigured') === true),
+                    serviceChip('Sonarr', sonarrCheck, pick(health, 'sonarrConfigured', 'SonarrConfigured') === true),
+                    { ok: fileTransformation, muted: false, label: fileTransformation ? 'File Transformation' : 'File Transformation missing' },
+                    { ok: enabledProfiles > 0, muted: false, label: enabledProfiles + ' profiles enabled' }
                 ];
-                host.innerHTML = chips.map(function (chip) {
-                    return '<span class="jellySeerr-chip ' + (chip.ok ? 'is-ok' : 'is-bad') + '">' + chip.label + '</span>';
-                }).join('');
+                host.innerHTML = chips.map(chipHtml).join('');
                 if (!fileTransformation) {
                     probeFileTransformation().then(function (installed) {
                         if (!installed) {
                             return;
                         }
-                        chips[1] = { ok: true, label: 'File Transformation' };
-                        host.innerHTML = chips.map(function (chip) {
-                            return '<span class="jellySeerr-chip ' + (chip.ok ? 'is-ok' : 'is-bad') + '">' + chip.label + '</span>';
-                        }).join('');
+                        chips[3] = { ok: true, muted: false, label: 'File Transformation' };
+                        host.innerHTML = chips.map(chipHtml).join('');
                     });
                 }
+            }
+
+            function serviceChip(name, check, configuredHint, okHint) {
+                const configured = pick(check, 'configured', 'Configured') === true || configuredHint === true;
+                const ok = pick(check, 'ok', 'Ok') === true || okHint === true;
+                if (!configured) {
+                    return { ok: false, muted: true, label: name + ' not set' };
+                }
+                return { ok: ok, muted: false, label: ok ? name + ' connected' : name + ' not connected' };
+            }
+
+            function chipHtml(chip) {
+                const cls = chip.ok ? 'is-ok' : (chip.muted ? 'is-muted' : 'is-bad');
+                return '<span class="jellySeerr-chip ' + cls + '">' + chip.label + '</span>';
             }
 
             function renderTabs(config) {
@@ -753,9 +769,11 @@
                     msg(pick(result, 'message', 'Message') || (pick(result, 'ok', 'Ok') ? 'Connected.' : 'Failed.'));
                     renderChips({
                         seerrConfigured: pick(result, 'ok', 'Ok') === true,
+                        radarrConfigured: pick(pick(result, 'radarr', 'Radarr') || {}, 'configured', 'Configured') === true,
+                        sonarrConfigured: pick(pick(result, 'sonarr', 'Sonarr') || {}, 'configured', 'Configured') === true,
                         fileTransformation: pick(result, 'fileTransformation', 'FileTransformation') === true,
                         enabledProfiles: Number(pick(result, 'profileCount', 'ProfileCount') || 0),
-                        test: { ok: pick(result, 'ok', 'Ok') === true }
+                        test: result
                     });
                     loadHealth();
                     loadUsers();

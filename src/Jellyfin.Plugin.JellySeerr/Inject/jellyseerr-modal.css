@@ -477,35 +477,38 @@
     cursor: not-allowed;
 }
 
-.bst-btn-trailer {
+.bst-popout-wrapper button.bst-btn-trailer {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
     min-height: 3rem;
     padding: 0.5rem 1.25rem;
-    border: 1px solid var(--bst-border-primary);
+    appearance: none;
+    -webkit-appearance: none;
+    border: none !important;
     border-radius: 0.5rem;
     font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--bst-type-primary);
-    background: var(--bst-bg-secondary);
+    font-weight: 600;
+    color: #fff !important;
+    background: #334155 !important;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease, opacity 0.1s ease;
+    transition: background-color 0.15s ease, opacity 0.1s ease;
     flex: 1;
 }
 
 @media (min-width: 640px) {
-    .bst-btn-trailer {
+    .bst-popout-wrapper button.bst-btn-trailer {
         flex: initial;
     }
 }
 
-.bst-btn-trailer:hover {
-    background: var(--bst-bg-secondary-hover);
-    color: var(--bst-type-primary);
+.bst-popout-wrapper button.bst-btn-trailer:hover {
+    background: #475569 !important;
+    color: #fff !important;
 }
 
-.bst-btn-trailer:disabled {
+.bst-popout-wrapper button.bst-btn-trailer:disabled {
     opacity: 0.55;
     cursor: not-allowed;
 }
@@ -519,16 +522,14 @@
     padding: 0.5rem 1.25rem;
     appearance: none;
     -webkit-appearance: none;
-    border: 1px solid #6b7280 !important;
+    border: none !important;
     border-radius: 0.5rem;
     font-size: 0.875rem;
-    font-weight: 500;
+    font-weight: 600;
     color: #fff !important;
-    background: transparent !important;
-    background-image: none !important;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    background: #4b5563 !important;
     cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.1s ease;
+    transition: background-color 0.15s ease, opacity 0.1s ease;
     flex: 1;
 }
 
@@ -539,8 +540,7 @@
 }
 
 .bst-popout-wrapper button.bst-btn-ghost:hover {
-    background: rgba(255, 255, 255, 0.1) !important;
-    border-color: #e5e7eb !important;
+    filter: brightness(1.12);
     color: #fff !important;
 }
 
@@ -552,6 +552,22 @@
 .bst-popout-wrapper button.bst-btn-ghost:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+.bst-popout-wrapper button.bst-btn-ghost[data-action="watchlist"] {
+    background: #4f46e5 !important;
+}
+
+.bst-popout-wrapper button.bst-btn-ghost[data-action="open-seerr"] {
+    background: #0f766e !important;
+}
+
+.bst-popout-wrapper button.bst-btn-ghost[data-action="issue"] {
+    background: #c2410c !important;
+}
+
+.bst-popout-wrapper button.bst-btn-ghost[data-action="unmonitor"] {
+    background: #57534e !important;
 }
 
 .bst-request-summaries {
