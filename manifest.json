@@ -7,6 +7,16 @@
     "owner": "ThuGie",
     "category": "General",
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
-    "versions": []
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Release 1.0.0.0.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.0.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "4F56BDACFEA86BA0704A55517B53D4BE",
+        "timestamp": "2026-09-07T02:27:41.0000000Z",
+        "dependencies": []
+      }
+    ]
   }
 ]
