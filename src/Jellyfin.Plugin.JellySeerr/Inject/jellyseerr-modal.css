@@ -24,6 +24,7 @@
 .bst-popout-wrapper .bst-btn-request,
 .bst-popout-wrapper .bst-btn-request-4k,
 .bst-popout-wrapper .bst-btn-trailer,
+.bst-popout-wrapper .bst-btn-ghost,
 .bst-popout-wrapper .bst-modal-close,
 .bst-popout-wrapper h1,
 .bst-popout-wrapper h3,
@@ -507,6 +508,51 @@
 .bst-btn-trailer:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+.bst-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3rem;
+    padding: 0.5rem 1.25rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--bst-type-primary);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, opacity 0.1s ease;
+    flex: 1;
+}
+
+@media (min-width: 640px) {
+    .bst-btn-ghost {
+        flex: initial;
+    }
+}
+
+.bst-btn-ghost:hover {
+    background: var(--bst-bg-secondary);
+}
+
+.bst-btn-ghost:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.bst-request-summaries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0 0 1rem;
+}
+
+.bst-request-summary {
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--bst-type-secondary);
 }
 
 .bst-details-layout {

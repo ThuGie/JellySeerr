@@ -1,5 +1,7 @@
 using System.Reflection;
 using System.Text;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellySeerr.Configuration;
 using Jellyfin.Plugin.JellySeerr.Configuration.Advanced;
 using Jellyfin.Plugin.JellySeerr.Helpers;
@@ -355,7 +357,8 @@ public class JellySeerrController : ControllerBase
             ? null
             : await _userMappingService.ResolveAsync(userId, username, cancellationToken).ConfigureAwait(false);
 
-        bool canOpenLocal = CanOpenLocalServices();
+        bool isAdmin = IsAdministrator(userManager, userId, match);
+        bool canOpenLocal = isAdmin && CanOpenLocalServices();
         string browse = canOpenLocal ? (browseUrl?.Trim() ?? string.Empty) : string.Empty;
 
         return Ok(new
@@ -365,6 +368,7 @@ public class JellySeerrController : ControllerBase
             radarrUrl = canOpenLocal ? ServarrUrl(config.RadarrUrl, config.RadarrApiKey) : string.Empty,
             sonarrUrl = canOpenLocal ? ServarrUrl(config.SonarrUrl, config.SonarrApiKey) : string.Empty,
             canOpenLocalServices = canOpenLocal,
+            isAdmin,
             radarrConfigured = !string.IsNullOrWhiteSpace(ServarrUrl(config.RadarrUrl, config.RadarrApiKey)),
             sonarrConfigured = !string.IsNullOrWhiteSpace(ServarrUrl(config.SonarrUrl, config.SonarrApiKey)),
             confirmCancel = config.ConfirmCancel,
@@ -381,6 +385,27 @@ public class JellySeerrController : ControllerBase
     {
         JObject? details = _discoveryService.GetMediaDetails(GetUsername(userManager) ?? string.Empty, mediaType, mediaId);
         return details == null ? NotFound() : Content(details.ToString(), "application/json");
+    }
+
+    [HttpGet("library-item/{mediaType}/{tmdbId:int}")]
+    [Authorize]
+    public ActionResult GetLibraryItem(string mediaType, int tmdbId, [FromServices] IUserManager userManager)
+    {
+        var user = userManager.GetUserById(GetUserId());
+        if (user == null)
+        {
+            return Forbid();
+        }
+
+        if (tmdbId <= 0)
+        {
+            return BadRequest(new { message = "A TMDB id is required." });
+        }
+
+        Guid? itemId = _requestListService.FindLibraryItemId(user, mediaType, tmdbId);
+        return itemId.HasValue
+            ? Ok(new { id = itemId.Value.ToString("N") })
+            : NotFound();
     }
 
     [HttpGet("justwatch/qualities/{mediaType}/{tmdbId}")]
@@ -526,6 +551,11 @@ public class JellySeerrController : ControllerBase
             return BadRequest(new { message = "MediaId is required." });
         }
 
+        if (!UserCanUnmonitor(userManager, match, payload.MediaType, payload.MediaId))
+        {
+            return StatusCode(403, new { message = "Only the requester or an admin can unmonitor this title." });
+        }
+
         (int status, string body, string contentType) = await _servarrProgressService
             .UnmonitorAsync(payload.MediaType, payload.MediaId, payload.Seasons, cancellationToken)
             .ConfigureAwait(false);
@@ -615,6 +645,40 @@ public class JellySeerrController : ControllerBase
 
     private static string ServarrUrl(string? url, string? apiKey) =>
         !string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(apiKey) ? url.Trim().TrimEnd('/') : string.Empty;
+
+    private bool IsAdministrator(IUserManager userManager, Guid userId, SeerrUserMatch? match)
+    {
+        if (match != null && UserMappingService.HasManageRequests(match.Permissions))
+        {
+            return true;
+        }
+
+        var user = userManager.GetUserById(userId);
+        return user != null && user.HasPermission(PermissionKind.IsAdministrator);
+    }
+
+    private bool UserCanUnmonitor(IUserManager userManager, SeerrUserMatch match, string? mediaType, int tmdbId)
+    {
+        if (IsAdministrator(userManager, GetUserId(), match))
+        {
+            return true;
+        }
+
+        JObject? details = _discoveryService.GetMediaDetails(GetUsername(userManager) ?? string.Empty, mediaType ?? "movie", tmdbId);
+        JObject? mediaInfo = details?.Value<JObject>("mediaInfo") ?? details?.Value<JObject>("media_info");
+        JArray? requests = mediaInfo?.Value<JArray>("requests") ?? mediaInfo?.Value<JArray>("Requests");
+        if (requests == null)
+        {
+            return false;
+        }
+
+        return requests.OfType<JObject>().Any(req =>
+        {
+            JObject? requestedBy = req.Value<JObject>("requestedBy") ?? req.Value<JObject>("RequestedBy");
+            int? ownerId = requestedBy?.Value<int?>("id") ?? requestedBy?.Value<int?>("Id");
+            return ownerId == match.Id;
+        });
+    }
 
     private bool CanOpenLocalServices()
     {

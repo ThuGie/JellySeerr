@@ -656,21 +656,30 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function lookupJellyfinPlayItem(tmdbId, mediaType) {
-        if (!tmdbId || typeof ApiClient === 'undefined' || typeof ApiClient.getItems !== 'function') {
+        if (!tmdbId || typeof ApiClient === 'undefined') {
             return Promise.resolve(null);
         }
         const userId = ApiClient.getCurrentUserId && ApiClient.getCurrentUserId();
         if (!userId) {
             return Promise.resolve(null);
         }
-        return ApiClient.getItems(userId, {
-            Recursive: true,
-            Limit: 1,
-            IncludeItemTypes: mediaType === 'tv' ? 'Series' : 'Movie',
-            AnyProviderIdEquals: 'Tmdb.' + tmdbId
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellySeerr/library-item/' + mediaType + '/' + tmdbId),
+            type: 'GET',
+            dataType: 'json'
         }).then(function (result) {
-            const items = (result && (result.Items || result.items)) || [];
-            return items[0] || null;
+            const itemId = result && (result.id || result.Id);
+            if (!itemId) {
+                return null;
+            }
+            if (typeof ApiClient.getItem !== 'function') {
+                return { Id: itemId };
+            }
+            return ApiClient.getItem(userId, itemId).then(function (item) {
+                return item && (item.Id || item.id) ? item : { Id: itemId };
+            }).catch(function () {
+                return { Id: itemId };
+            });
         }).catch(function () {
             return null;
         });
@@ -723,14 +732,147 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return pickVal(clientSettingsCache, 'canManageRequests', 'CanManageRequests') === true;
     }
 
+    function isAdminUser() {
+        return pickVal(clientSettingsCache, 'isAdmin', 'IsAdmin') === true || canManageRequests();
+    }
+
+    function currentSeerrUserId() {
+        return Number(pickVal(clientSettingsCache, 'seerrUserId', 'SeerrUserId')) || 0;
+    }
+
+    function requestOwnerId(req) {
+        const by = req && (req.requestedBy || req.RequestedBy || req.requested_by);
+        if (!by || typeof by !== 'object') {
+            return null;
+        }
+        return by.id || by.Id || null;
+    }
+
+    function requestOwnerName(req) {
+        const by = req && (req.requestedBy || req.RequestedBy || req.requested_by);
+        if (!by) {
+            return '';
+        }
+        if (typeof by === 'string') {
+            return by;
+        }
+        return by.displayName || by.DisplayName || by.username || by.Username || '';
+    }
+
+    function canModifyRequest(req) {
+        if (isAdminUser()) {
+            return true;
+        }
+        const owner = requestOwnerId(req);
+        const me = currentSeerrUserId();
+        if (owner && me) {
+            return Number(owner) === Number(me);
+        }
+        return !!(pendingRequestContext && pendingRequestContext.requestId && requestIdOf(req) === pendingRequestContext.requestId);
+    }
+
+    function canUnmonitorTitle(data) {
+        if (!canUnmonitor()) {
+            return false;
+        }
+        if (isAdminUser()) {
+            return true;
+        }
+        return getRequestRecords(data).some(canModifyRequest);
+    }
+
+    function requestStatusLabel(req) {
+        const status = requestStatusOf(req);
+        if (status === 1) {
+            return 'Pending';
+        }
+        if (status === 2) {
+            return 'Approved';
+        }
+        if (status === 3) {
+            return 'Declined';
+        }
+        if (status === 4) {
+            return 'Failed';
+        }
+        return '';
+    }
+
+    function requestSeasonNumbers(req) {
+        const seasons = [];
+        const list = (req && (req.seasons || req.Seasons)) || [];
+        list.forEach(function (entry) {
+            const n = typeof entry === 'number' ? entry : (entry && (entry.seasonNumber != null ? entry.seasonNumber : entry.SeasonNumber));
+            if (Number.isFinite(n) && seasons.indexOf(n) === -1) {
+                seasons.push(n);
+            }
+        });
+        return seasons.sort(function (a, b) { return a - b; });
+    }
+
+    function formatRequestSummary(req, mediaType) {
+        const parts = [];
+        parts.push(requestIs4k(req) ? '4K' : 'HD');
+        const seasons = requestSeasonNumbers(req);
+        if (mediaType === 'tv' && seasons.length) {
+            parts.push(seasons.length === 1 ? ('Season ' + seasons[0]) : ('Seasons ' + seasons.join(', ')));
+        }
+        const status = requestStatusLabel(req);
+        if (status) {
+            parts.push(status);
+        }
+        const by = requestOwnerName(req);
+        if (by) {
+            parts.push('Requested by ' + by);
+        }
+        const profile = req && (req.profileName || req.ProfileName);
+        if (profile) {
+            parts.push(profile);
+        }
+        return parts.join(' · ');
+    }
+
+    function getActiveRequestSummaries(data) {
+        const seen = {};
+        const list = [];
+        getRequestRecords(data).forEach(function (req) {
+            const status = requestStatusOf(req);
+            const id = requestIdOf(req);
+            if (!id || seen[id] || (status !== 1 && status !== 2 && status !== 4)) {
+                return;
+            }
+            seen[id] = true;
+            list.push(req);
+        });
+        if (!list.length && pendingRequestContext && pendingRequestContext.requestId && !seen[pendingRequestContext.requestId]) {
+            list.push({
+                id: pendingRequestContext.requestId,
+                status: pendingRequestContext.requestStatus,
+                is4k: pendingRequestContext.is4k === true,
+                seasons: pendingRequestContext.seasons || []
+            });
+        }
+        return list;
+    }
+
+    function renderActiveRequestSummaries(data, mediaType) {
+        const reqs = getActiveRequestSummaries(data);
+        if (!reqs.length) {
+            return '';
+        }
+        return `<div class="bst-request-summaries">${reqs.map(function (req) {
+            return `<div class="bst-request-summary">${escapeHtml(formatRequestSummary(req, mediaType))}</div>`;
+        }).join('')}</div>`;
+    }
+
     function shouldConfirmCancel() {
         return pickVal(clientSettingsCache, 'confirmCancel', 'ConfirmCancel') !== false;
     }
 
     function renderRequestLifecycleButtons(data, mediaType) {
         const pending = getPendingRequests(data);
-        const cancellable = getCancellableRequests(data);
-        const failed = getFailedRequests(data);
+        const cancellable = getCancellableRequests(data).filter(canModifyRequest);
+        const failed = getFailedRequests(data).filter(canModifyRequest);
         const manage = canManageRequests();
         const parts = [];
 
@@ -754,7 +896,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
             parts.push(`<button type="button" class="bst-btn-trailer" data-action="retry-request" data-request-id="${id}">${requestIs4k(req) ? 'Retry 4K' : 'Retry request'}</button>`);
         });
 
-        const editable = getEditableRequests(data, false).concat(getEditableRequests(data, true));
+        const editable = getEditableRequests(data, false).concat(getEditableRequests(data, true)).filter(canModifyRequest);
         const seenEdit = {};
         editable.forEach(function (req) {
             const id = requestIdOf(req);
@@ -766,13 +908,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
             parts.push(`<button type="button" class="bst-btn-trailer" data-action="change-request" data-request-id="${id}" data-is-4k="${fourK ? '1' : '0'}">${fourK ? 'Change 4K request' : 'Change request'}</button>`);
         });
 
-        const info = data && (data.mediaInfo || data.media_info);
-        const alreadyRequested = getRequestButtonState(data, false).requested
-            || getRequestButtonState(data, true).requested
-            || pendingContextIsActive(false)
-            || pendingContextIsActive(true);
-        if (canUnmonitor() && (alreadyRequested || info)) {
-            parts.push(`<button type="button" class="bst-btn-trailer" data-action="unmonitor">Unmonitor</button>`);
+        if (canUnmonitorTitle(data)) {
+            parts.push(`<button type="button" class="bst-btn-ghost" data-action="unmonitor">Unmonitor</button>`);
         }
 
         return parts.join('');
@@ -1758,16 +1895,17 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                 ${trailerKey
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="trailer" data-trailer-key="${escapeHtml(trailerKey)}">Trailer</button>`
                                                     : ''}
-                                                <button type="button" class="bst-btn-trailer" data-action="watchlist" data-watchlisted="${isOnWatchlist(data) ? 'true' : 'false'}">${isOnWatchlist(data) ? 'Remove from watchlist' : 'Watchlist'}</button>
+                                                <button type="button" class="bst-btn-ghost" data-action="watchlist" data-watchlisted="${isOnWatchlist(data) ? 'true' : 'false'}">${isOnWatchlist(data) ? 'Remove from watchlist' : 'Watchlist'}</button>
                                                 ${browseUrl && tmdbId
-                                                    ? `<button type="button" class="bst-btn-trailer" data-action="open-seerr">Open in Seerr</button>`
+                                                    ? `<button type="button" class="bst-btn-ghost" data-action="open-seerr">Open in Seerr</button>`
                                                     : ''}
                                                 ${data.mediaInfo || data.media_info || requestState.requested
-                                                    ? `<button type="button" class="bst-btn-trailer" data-action="issue">Report issue</button>`
+                                                    ? `<button type="button" class="bst-btn-ghost" data-action="issue">Report issue</button>`
                                                     : ''}
                                                 ${renderRequestLifecycleButtons(data, mediaType)}
                                             </div>
                                         </div>
+                                        ${renderActiveRequestSummaries(data, mediaType)}
                                         ${renderDetailsStatusNotice(data)}
                                         <div class="bst-details-layout">
                                             <div class="bst-details-main">
@@ -1851,9 +1989,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }
 
         const playBtn = root.querySelector('[data-action="play"]');
-        if (playBtn && tmdbId) {
-            lookupJellyfinPlayItem(tmdbId, mediaType).then(function (item) {
+        if (playBtn && mediaId) {
+            lookupJellyfinPlayItem(mediaId, mediaType).then(function (item) {
                 if (!item || !playBtn.isConnected) {
+                    return;
+                }
+                const type = String(item.Type || item.type || '').toLowerCase();
+                if (type && ((mediaType === 'tv' && type !== 'series') || (mediaType !== 'tv' && type !== 'movie'))) {
                     return;
                 }
                 playBtn.hidden = false;
@@ -1948,30 +2090,37 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     return;
                 }
                 btn.disabled = true;
-                ApiClient.ajax({ url: url, type: method }).then(function () {
-                    if (action === 'cancel-request') {
-                        pendingRequestContext = null;
-                        const seasons = getRequestSeasons(data);
-                        return unmonitorTitle(mediaType, mediaId, seasons).then(function (result) {
-                            return (result && (result.message || result.Message)) || 'Request cancelled and monitoring stopped.';
-                        }).catch(function (unmonitorErr) {
-                            return readAjaxErrorMessage(unmonitorErr, '').then(function (msg) {
-                                return msg
-                                    ? 'Request cancelled. Could not unmonitor: ' + msg
-                                    : 'Request cancelled.';
-                            });
+                const actionPromise = action === 'cancel-request'
+                    ? unmonitorTitle(mediaType, mediaId, getRequestSeasons(data)).then(function () {
+                        return { unmonitored: true, unmonitorMsg: '' };
+                    }).catch(function (unmonitorErr) {
+                        return readAjaxErrorMessage(unmonitorErr, '').then(function (msg) {
+                            return { unmonitored: false, unmonitorMsg: msg || '' };
                         });
-                    }
-                    if (pendingRequestContext) {
-                        if (action === 'approve-request' || action === 'decline-request') {
-                            pendingRequestContext.isPending = false;
+                    }).then(function (unmonitorResult) {
+                        return ApiClient.ajax({ url: url, type: method }).then(function () {
+                            pendingRequestContext = null;
+                            if (unmonitorResult.unmonitored) {
+                                return 'Request cancelled and monitoring stopped.';
+                            }
+                            return unmonitorResult.unmonitorMsg
+                                ? 'Request cancelled. Could not unmonitor: ' + unmonitorResult.unmonitorMsg
+                                : 'Request cancelled.';
+                        });
+                    })
+                    : ApiClient.ajax({ url: url, type: method }).then(function () {
+                        if (pendingRequestContext) {
+                            if (action === 'approve-request' || action === 'decline-request') {
+                                pendingRequestContext.isPending = false;
+                            }
+                            if (action === 'retry-request') {
+                                pendingRequestContext.isFailed = false;
+                            }
                         }
-                        if (action === 'retry-request') {
-                            pendingRequestContext.isFailed = false;
-                        }
-                    }
-                    return 'Updated request';
-                }).then(function (message) {
+                        return 'Updated request';
+                    });
+
+                actionPromise.then(function (message) {
                     return reloadDetailsModal(mediaId, mediaType).then(function () {
                         notifyUser(message || 'Updated request');
                     });

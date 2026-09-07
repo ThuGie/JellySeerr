@@ -414,11 +414,11 @@ public class RequestListService
                 {
                     { "Tmdb", tmdbId.ToString(CultureInfo.InvariantCulture) }
                 },
-                Limit = 1
+                Limit = 25
             };
 
             QueryResult<BaseItem> result = _libraryManager.GetItemsResult(query);
-            itemId = result.Items.FirstOrDefault()?.Id;
+            itemId = result.Items.FirstOrDefault(item => HasTmdbProviderId(item, tmdbId))?.Id;
         }
         catch (Exception ex)
         {
@@ -427,6 +427,31 @@ public class RequestListService
 
         cache[cacheKey] = itemId;
         return itemId;
+    }
+
+    public Guid? FindLibraryItemId(User user, string? mediaType, int tmdbId)
+    {
+        return ResolveLibraryItemId(user, mediaType, tmdbId, new Dictionary<string, Guid?>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static bool HasTmdbProviderId(BaseItem item, int tmdbId)
+    {
+        string expected = tmdbId.ToString(CultureInfo.InvariantCulture);
+        foreach (KeyValuePair<string, string> pair in item.ProviderIds)
+        {
+            if (!string.Equals(pair.Key, "Tmdb", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(pair.Key, "TheMovieDb", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(pair.Value, expected, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static JArray GetSeasonNumbers(JArray? seasons)
