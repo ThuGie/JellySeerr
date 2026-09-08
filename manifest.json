@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.12.0",
+        "changelog": "Restore Home tab bar setup after coexistence fix; still leave other plugins’ tabs alone.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.12.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "9BE9772E1654BB8B1DE5FEE61FB69604",
+        "timestamp": "2026-09-08T09:31:56.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.11.0",
         "changelog": "Stop removing other plugins’ Home tabs (e.g. JellySpot); only clean up JellySeerr leftovers.",
         "targetAbi": "10.11.0.0",
