@@ -3,7 +3,8 @@
 Base route: **`/JellySeerr`** (`[Route("JellySeerr")]`).  
 Unless noted, endpoints require Jellyfin `[Authorize]` (logged-in session).
 
-Target: Jellyfin **10.11.x**, `targetAbi` `10.11.0.0`, NuGet **10.11.2**, `net9.0`.
+Target: Jellyfin **10.11.9+** (catalog `targetAbi` still `10.11.0.0`), NuGet **10.11.11**, `net9.0`.  
+`IUserManager.Users` was removed in 10.11.9 — we call `GetUsers()`.
 
 Deep companions: [inject-and-client.md](inject-and-client.md) · [networking.md](networking.md) · [../permissions.md](../permissions.md).
 

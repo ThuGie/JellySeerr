@@ -113,14 +113,6 @@ window.jellySeerrLog = window.jellySeerrLog || {
         });
     }
 
-    function openServarrUrl(url) {
-        if (!url) {
-            return;
-        }
-
-        window.open(url, '_blank', 'noopener,noreferrer');
-    }
-
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text || '';
@@ -368,23 +360,6 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }
     }
 
-    function getServarrOpenUrl(item) {
-        const progress = getServarrProgress(item);
-        if (progress?.openUrl) {
-            return progress.openUrl;
-        }
-
-        const mediaType = item.type === 'tv' ? 'tv' : 'movie';
-        const base = mediaType === 'tv'
-            ? state.clientSettings?.sonarrUrl
-            : state.clientSettings?.radarrUrl;
-        if (!base || !item.tmdbId) {
-            return '';
-        }
-
-        return base + '/add/new?term=tmdb:' + item.tmdbId;
-    }
-
     function canOpenLocalServices() {
         return !!(state.clientSettings && state.clientSettings.canOpenLocalServices);
     }
@@ -531,17 +506,18 @@ window.jellySeerrLog = window.jellySeerrLog || {
             ? 'Failed to find content'
             : (isMissing ? 'No downloads' : [progress.qualityLabel, sizeText].filter(Boolean).join(' · '));
 
-        const openUrl = canOpenLocalServices() ? (progress.openUrl || '') : '';
-        const openAttr = openUrl ? ` data-open-url="${escapeHtml(openUrl)}" role="link"` : '';
+        const detailHtml = detailText
+            ? `<span class="jellySeerr-request-progress-detail">${escapeHtml(detailText)}</span>`
+            : '';
 
         return `
-            <div class="jellySeerr-request-progress" data-status="${statusKey}"${openAttr}>
+            <div class="jellySeerr-request-progress" data-status="${statusKey}">
                 <div class="jellySeerr-request-progress-bar" aria-hidden="true">
                     <div class="jellySeerr-request-progress-fill" style="width:${percent}%"></div>
                 </div>
                 <div class="jellySeerr-request-progress-meta">
                     <span class="jellySeerr-request-progress-percent">${escapeHtml(percentText)}</span>
-                    <span class="jellySeerr-request-progress-detail">${escapeHtml(detailText)}</span>
+                    ${detailHtml}
                 </div>
             </div>`;
     }
@@ -1034,14 +1010,6 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 } else if (action === 'seerr') {
                     openJellyseerrManage(actionBtn.getAttribute('data-tmdb-id'), actionBtn.getAttribute('data-media-type'));
                 }
-                return;
-            }
-
-            const progress = event.target.closest('.jellySeerr-request-progress');
-            if (progress && progress.getAttribute('data-open-url') && container.contains(progress)) {
-                event.preventDefault();
-                event.stopPropagation();
-                openServarrUrl(progress.getAttribute('data-open-url'));
                 return;
             }
 

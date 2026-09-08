@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 env:
-  JELLYFIN_VERSION: "10.11.2"
+  JELLYFIN_VERSION: "10.11.11"
   TARGET_ABI: "10.11.0.0"
   CSPROJ: "src/Jellyfin.Plugin.JellySeerr/Jellyfin.Plugin.JellySeerr.csproj"
   ASSEMBLY_INFO: "src/Jellyfin.Plugin.JellySeerr/Properties/AssemblyInfo.cs"

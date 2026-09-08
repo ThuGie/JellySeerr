@@ -6,7 +6,7 @@ Admins decide which Radarr/Sonarr quality profiles are offered. Click a title fo
 
 ## Prerequisites
 
-- Jellyfin **10.11.x**
+- Jellyfin **10.11.9+** (10.11.x catalog ABI)
 - A running Seerr instance with Jellyfin users linked
 - The [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin (needed for the extra tabs)
 

@@ -64,7 +64,7 @@ public class UserMappingService
     public async Task<List<object>> MapJellyfinUsersAsync(IUserManager userManager, CancellationToken cancellationToken)
     {
         var results = new List<object>();
-        foreach (var user in userManager.Users)
+        foreach (var user in userManager.GetUsers())
         {
             SeerrUserMatch? match = null;
             string? error = null;

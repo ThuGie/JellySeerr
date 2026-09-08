@@ -60,7 +60,7 @@ Deep docs: [tmdb/](tmdb/).
 
 | Resource | URL | Notes |
 |----------|-----|--------|
-| Plugin ABI | Jellyfin 10.11.x (`targetAbi` 10.11.0.0) | NuGet packages 10.11.2 |
+| Plugin ABI | Jellyfin 10.11.x (`targetAbi` 10.11.0.0) | NuGet packages 10.11.11 (needs host **10.11.9+** for `IUserManager.GetUsers`) |
 | Library queries | In-process `ILibraryManager` | TMDB provider id match for Play |
 
 Deep docs: [jellyfin/](jellyfin/).
