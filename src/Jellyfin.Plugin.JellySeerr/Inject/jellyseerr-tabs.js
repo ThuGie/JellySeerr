@@ -610,16 +610,12 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             if (kind === 'home') {
                 found = native.find(function (btn) {
                     return buttonText(btn) === 'home';
-                }) || native.find(function (btn) {
-                    return btn.getAttribute('data-index') === '0';
-                }) || native[0] || null;
+                }) || null;
             } else {
                 found = native.find(function (btn) {
                     const text = buttonText(btn);
                     return text === 'favorites' || text === 'favourites';
-                }) || native.find(function (btn) {
-                    return btn.getAttribute('data-index') === '1';
-                }) || native[1] || null;
+                }) || null;
             }
 
             if (found) {
@@ -685,15 +681,17 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 if (ct) {
                     return 'ct:' + ct[1];
                 }
-                const index = btn.getAttribute('data-index');
-                if (index === '0') {
+                const label = btn.querySelector('.emby-button-foreground');
+                const text = ((label && label.textContent) || btn.textContent || '').trim().toLowerCase();
+                if (text === 'home') {
                     return 'jf:home';
                 }
-                if (index === '1') {
+                if (text === 'favorites' || text === 'favourites') {
                     return 'jf:favorites';
                 }
-                return 'other:' + index;
-            }).join('|');
+                // Ignore foreign plugin tabs (JellySpot, etc.) so they do not dirty the signature.
+                return null;
+            }).filter(Boolean).join('|');
         },
 
         waitForCustomTabs: function (customTabs, attemptsLeft) {
@@ -744,7 +742,11 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         removeUnplannedTabButtons: function (tabsSlider, plannedButtons) {
             const keep = new Set(plannedButtons);
             tabsSlider.querySelectorAll('.emby-tab-button').forEach(function (button) {
-                if (!keep.has(button)) {
+                if (keep.has(button)) {
+                    return;
+                }
+                // Only strip our own leftovers. Leave Jellyfin, Custom Tabs, and other plugins alone.
+                if (button.getAttribute('data-jellySeerr-tab')) {
                     button.remove();
                 }
             });
