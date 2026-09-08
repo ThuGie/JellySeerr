@@ -595,27 +595,86 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             }
 
             const buttons = Array.from(tabsSlider.querySelectorAll('.emby-tab-button'));
-            const native = buttons.filter(function (btn) {
-                return !btn.hasAttribute('data-jellySeerr-tab') &&
-                    !btn.hasAttribute('data-jellySeerr-native') &&
-                    (btn.id || '').indexOf('customTabButton_') !== 0;
-            });
 
             function buttonText(btn) {
                 const label = btn.querySelector('.emby-button-foreground');
-                return ((label && label.textContent) || btn.textContent || '').trim().toLowerCase();
+                const raw = (label && label.textContent)
+                    || btn.getAttribute('aria-label')
+                    || btn.getAttribute('title')
+                    || btn.textContent
+                    || '';
+                return String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
             }
+
+            function isOwnedOrCustom(btn) {
+                return btn.hasAttribute('data-jellySeerr-tab')
+                    || btn.hasAttribute('data-jellySeerr-native')
+                    || (btn.id || '').indexOf('customTabButton_') === 0;
+            }
+
+            // Other plugins often set an id or their own data-* attrs. Stock Jellyfin tabs usually do not.
+            function isForeignPluginTab(btn) {
+                if (isOwnedOrCustom(btn)) {
+                    return false;
+                }
+                if (btn.id) {
+                    return true;
+                }
+                const names = btn.getAttributeNames ? btn.getAttributeNames() : [];
+                for (let i = 0; i < names.length; i++) {
+                    const name = names[i];
+                    if (name.indexOf('data-') !== 0) {
+                        continue;
+                    }
+                    if (name === 'data-index'
+                        || name.indexOf('data-jellySeerr') === 0
+                        || name === 'data-action'
+                        || name === 'data-ripple') {
+                        continue;
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            const stock = buttons.filter(function (btn) {
+                return !isOwnedOrCustom(btn) && !isForeignPluginTab(btn);
+            });
 
             let found = null;
             if (kind === 'home') {
-                found = native.find(function (btn) {
+                found = stock.find(function (btn) {
                     return buttonText(btn) === 'home';
                 }) || null;
             } else {
-                found = native.find(function (btn) {
+                found = stock.find(function (btn) {
                     const text = buttonText(btn);
                     return text === 'favorites' || text === 'favourites';
                 }) || null;
+            }
+
+            // Match the stock panel index when present (#homeTab / #favoritesTab).
+            if (!found) {
+                const panel = document.getElementById(kind === 'home' ? 'homeTab' : 'favoritesTab');
+                const panelIndex = panel && panel.getAttribute('data-index');
+                if (panelIndex != null && panelIndex !== '') {
+                    found = stock.find(function (btn) {
+                        return btn.getAttribute('data-index') === panelIndex;
+                    }) || null;
+                }
+            }
+
+            // Last resort among stock Jellyfin tabs only — never grab foreign plugin buttons.
+            if (!found) {
+                if (kind === 'home') {
+                    found = stock.find(function (btn) {
+                        return btn.getAttribute('data-index') === '0';
+                    }) || stock[0] || null;
+                } else {
+                    found = stock.find(function (btn) {
+                        return btn.getAttribute('data-index') === '1';
+                    }) || stock[1] || null;
+                }
             }
 
             if (found) {
@@ -681,15 +740,44 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 if (ct) {
                     return 'ct:' + ct[1];
                 }
+
+                // Foreign plugin tabs (id / custom data-*) — omit so they do not dirty the signature.
+                if (btn.id) {
+                    return null;
+                }
+                const names = btn.getAttributeNames ? btn.getAttributeNames() : [];
+                for (let i = 0; i < names.length; i++) {
+                    const name = names[i];
+                    if (name.indexOf('data-') === 0
+                        && name !== 'data-index'
+                        && name.indexOf('data-jellySeerr') !== 0
+                        && name !== 'data-action'
+                        && name !== 'data-ripple') {
+                        return null;
+                    }
+                }
+
                 const label = btn.querySelector('.emby-button-foreground');
-                const text = ((label && label.textContent) || btn.textContent || '').trim().toLowerCase();
+                const text = String(
+                    (label && label.textContent)
+                    || btn.getAttribute('aria-label')
+                    || btn.getAttribute('title')
+                    || btn.textContent
+                    || ''
+                ).replace(/\s+/g, ' ').trim().toLowerCase();
                 if (text === 'home') {
                     return 'jf:home';
                 }
                 if (text === 'favorites' || text === 'favourites') {
                     return 'jf:favorites';
                 }
-                // Ignore foreign plugin tabs (JellySpot, etc.) so they do not dirty the signature.
+                const index = btn.getAttribute('data-index');
+                if (index === '0') {
+                    return 'jf:home';
+                }
+                if (index === '1') {
+                    return 'jf:favorites';
+                }
                 return null;
             }).filter(Boolean).join('|');
         },
