@@ -52,6 +52,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         lastAutoRefreshAt: 0,
         clientSettings: null,
         viewAll: false,
+        scopeReady: false,
         session: null
     };
 
@@ -69,6 +70,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 radarrUrl: (config.radarrUrl || '').replace(/\/+$/, ''),
                 sonarrUrl: (config.sonarrUrl || '').replace(/\/+$/, ''),
                 canOpenLocalServices: config.canOpenLocalServices === true || config.CanOpenLocalServices === true,
+                canManageRequests: config.canManageRequests === true || config.CanManageRequests === true,
                 showQuotaWarnings: config.showQuotaWarnings !== false && config.ShowQuotaWarnings !== false
             };
         }).catch(function (err) {
@@ -78,6 +80,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 radarrUrl: '',
                 sonarrUrl: '',
                 canOpenLocalServices: false,
+                canManageRequests: false,
                 showQuotaWarnings: false
             };
         });
@@ -660,6 +663,32 @@ window.jellySeerrLog = window.jellySeerrLog || {
         container.querySelectorAll('.jellySeerr-requests-filter').forEach(function (button) {
             button.classList.toggle('is-active', button.getAttribute('data-filter') === state.filter);
         });
+        updateScopeControls(container);
+    }
+
+    function canViewAllRequests() {
+        return !!(state.clientSettings && state.clientSettings.canManageRequests);
+    }
+
+    function updateScopeControls(container) {
+        const group = container && container.querySelector('.jellySeerr-requests-scope-group');
+        if (!group) {
+            return;
+        }
+
+        const canAll = canViewAllRequests();
+        group.hidden = !canAll;
+        if (!canAll) {
+            state.viewAll = false;
+        } else if (!state.scopeReady) {
+            state.viewAll = true;
+            state.scopeReady = true;
+        }
+
+        group.querySelectorAll('.jellySeerr-requests-scope').forEach(function (button) {
+            const isAll = button.getAttribute('data-scope') === 'all';
+            button.classList.toggle('is-active', state.viewAll ? isAll : !isAll);
+        });
     }
 
     function renderPagination(page, totalPages) {
@@ -933,13 +962,16 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 <div class="sectionTitleContainer sectionTitleContainer-cards padded-left padded-right">
                     <h2 class="sectionTitle sectionTitle-cards">Requests</h2>
                     <span class="jellySeerr-requests-quota" hidden></span>
-                    <button type="button" class="jellySeerr-requests-scope" data-scope="mine">Mine</button>
-                    <button type="button" class="jellySeerr-requests-scope" data-scope="all">All</button>
                     <button type="button" class="jellySeerr-requests-reload" aria-label="Reload requests" title="Reload requests">
                         <span class="material-icons" aria-hidden="true">refresh</span>
                     </button>
                 </div>
                 <div class="jellySeerr-requests-filters padded-left padded-right">
+                    <div class="jellySeerr-requests-scope-group" hidden>
+                        <button type="button" class="jellySeerr-requests-filter jellySeerr-requests-scope" data-scope="all">All</button>
+                        <button type="button" class="jellySeerr-requests-filter jellySeerr-requests-scope" data-scope="mine">Mine</button>
+                    </div>
+                    <span class="jellySeerr-requests-filters-divider" aria-hidden="true"></span>
                     ${filterButtons}
                 </div>
             </div>
@@ -967,6 +999,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         settingsPromise.then(function () {
             return loadClientSettings();
         }).then(function () {
+            updateScopeControls(container);
             loadRequests(container);
             refreshQuotaChip(container);
             startAutoRefresh();
@@ -1034,8 +1067,17 @@ window.jellySeerrLog = window.jellySeerrLog || {
             const scopeBtn = event.target.closest('.jellySeerr-requests-scope');
             if (scopeBtn) {
                 event.preventDefault();
-                state.viewAll = scopeBtn.getAttribute('data-scope') === 'all';
+                if (!canViewAllRequests()) {
+                    return;
+                }
+                const nextAll = scopeBtn.getAttribute('data-scope') === 'all';
+                if (nextAll === state.viewAll) {
+                    return;
+                }
+                state.viewAll = nextAll;
+                state.scopeReady = true;
                 state.page = 1;
+                updateScopeControls(container);
                 loadRequests(container);
                 return;
             }

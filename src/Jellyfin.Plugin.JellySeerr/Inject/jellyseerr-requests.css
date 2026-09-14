@@ -64,10 +64,33 @@
 .jellySeerr-requests-filters {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.35em 1.25em;
     margin-bottom: 1em;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     padding-bottom: 0.65em;
+}
+
+.jellySeerr-requests-scope-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85em;
+}
+
+.jellySeerr-requests-scope-group[hidden] {
+    display: none;
+}
+
+.jellySeerr-requests-filters-divider {
+    display: none;
+    width: 1px;
+    height: 1.1em;
+    background: rgba(255, 255, 255, 0.16);
+    flex: 0 0 auto;
+}
+
+.jellySeerr-requests-scope-group:not([hidden]) + .jellySeerr-requests-filters-divider {
+    display: inline-block;
 }
 
 .jellySeerr-requests-filter {
