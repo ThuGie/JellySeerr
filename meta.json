@@ -1,14 +1,14 @@
 {
   "category": "General",
-  "changelog": "Restore Home tab bar setup after coexistence fix; still leave other plugins’ tabs alone.",
+  "changelog": "Fix Requests tab HTTP 401 when legacy auth headers are disabled (use ApiClient.ajax).",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
   "overview": "Browse Seerr and send requests from Jellyfin, with admin control over quality profiles.",
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
-  "timestamp": "2026-09-08T00:00:00.0000000Z",
-  "version": "1.0.12.0",
+  "timestamp": "2026-09-14T00:00:00.0000000Z",
+  "version": "1.0.13.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

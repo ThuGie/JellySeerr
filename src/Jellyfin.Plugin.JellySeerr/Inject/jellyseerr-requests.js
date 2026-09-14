@@ -734,13 +734,12 @@ window.jellySeerrLog = window.jellySeerrLog || {
             params.all = true;
         }
 
-        return fetch(ApiClient.getUrl('JellySeerr/requests', params), {
-            headers: { 'X-MediaBrowser-Token': ApiClient.accessToken() }
-        }).then(function (response) {
-            if (!response.ok) {
-                throw new Error('HTTP ' + response.status);
-            }
-            return response.json();
+        // Use ApiClient.ajax so auth uses Authorization: MediaBrowser Token=...
+        // Raw X-MediaBrowser-Token fails when EnableLegacyAuthorization is false (Jellyfin 10.11+).
+        return ApiClient.ajax({
+            url: ApiClient.getUrl('JellySeerr/requests', params),
+            type: 'GET',
+            dataType: 'json'
         });
     }
 
