@@ -2,91 +2,70 @@ using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellySeerr.Model;
 
+/// <summary>
+/// Request body for create/update. Use one JSON name per field — dual Pascal/camel
+/// properties collide under Jellyfin's case-insensitive System.Text.Json options.
+/// Clients may still send MediaType/MediaId; case-insensitive binding maps them.
+/// </summary>
 public class RequestPayload
 {
-    [JsonPropertyName("MediaType")]
+    [JsonPropertyName("mediaType")]
     public string MediaType { get; set; } = string.Empty;
 
-    [JsonPropertyName("mediaType")]
-    public string MediaTypeCamel
-    {
-        get => MediaType;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                MediaType = value;
-            }
-        }
-    }
-
-    [JsonPropertyName("MediaId")]
+    [JsonPropertyName("mediaId")]
     public int MediaId { get; set; }
 
-    [JsonPropertyName("mediaId")]
-    public int MediaIdCamel
-    {
-        get => MediaId;
-        set
-        {
-            if (value > 0)
-            {
-                MediaId = value;
-            }
-        }
-    }
-
-    [JsonPropertyName("ServerId")]
+    [JsonPropertyName("serverId")]
     public int? ServerId { get; set; }
 
-    [JsonPropertyName("ProfileId")]
+    [JsonPropertyName("profileId")]
     public int? ProfileId { get; set; }
 
-    [JsonPropertyName("RootFolder")]
+    [JsonPropertyName("rootFolder")]
     public string? RootFolder { get; set; }
 
-    [JsonPropertyName("Is4k")]
+    [JsonPropertyName("is4k")]
     public bool Is4k { get; set; }
 
-    [JsonPropertyName("IsAnime")]
+    [JsonPropertyName("isAnime")]
     public bool IsAnime { get; set; }
 
-    [JsonPropertyName("Seasons")]
+    [JsonPropertyName("seasons")]
     public List<int>? Seasons { get; set; }
 
-    [JsonPropertyName("Tags")]
+    [JsonPropertyName("tags")]
     public List<int>? Tags { get; set; }
 
-    [JsonPropertyName("LanguageProfileId")]
+    [JsonPropertyName("languageProfileId")]
     public int? LanguageProfileId { get; set; }
 }
 
 public class IssuePayload
 {
-    [JsonPropertyName("IssueType")]
+    [JsonPropertyName("issueType")]
     public int IssueType { get; set; }
 
-    [JsonPropertyName("Message")]
+    [JsonPropertyName("message")]
     public string? Message { get; set; }
 
-    [JsonPropertyName("MediaId")]
+    [JsonPropertyName("mediaId")]
     public int MediaId { get; set; }
 }
 
 public class BulkCancelPayload
 {
-    [JsonPropertyName("Ids")]
+    [JsonPropertyName("ids")]
     public List<int> Ids { get; set; } = new();
 }
 
 public class UnmonitorPayload
 {
-    [JsonPropertyName("MediaType")]
+    [JsonPropertyName("mediaType")]
     public string MediaType { get; set; } = string.Empty;
 
-    [JsonPropertyName("MediaId")]
+    [JsonPropertyName("mediaId")]
     public int MediaId { get; set; }
 
-    [JsonPropertyName("Seasons")]
+    [JsonPropertyName("seasons")]
     public List<int>? Seasons { get; set; }
 }

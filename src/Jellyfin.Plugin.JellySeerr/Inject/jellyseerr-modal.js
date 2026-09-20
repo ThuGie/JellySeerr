@@ -1342,9 +1342,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
             url: ApiClient.getUrl('JellySeerr/servarr/unmonitor'),
             type: 'POST',
             data: JSON.stringify({
-                MediaType: mediaType,
-                MediaId: mediaId,
-                Seasons: Array.isArray(seasons) ? seasons : []
+                mediaType: mediaType,
+                mediaId: mediaId,
+                seasons: Array.isArray(seasons) ? seasons : []
             }),
             contentType: 'application/json',
             dataType: 'json'
@@ -1360,25 +1360,23 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function submitRequest(mediaId, mediaType, option, onSuccess, onError) {
         const payload = {
-            MediaType: mediaType,
             mediaType: mediaType,
-            MediaId: parseInt(mediaId, 10),
             mediaId: parseInt(mediaId, 10),
-            Is4k: !!option.is4k
+            is4k: !!option.is4k
         };
 
         if (option.serverId != null && !Number.isNaN(Number(option.serverId))) {
-            payload.ServerId = Number(option.serverId);
+            payload.serverId = Number(option.serverId);
         }
         if (option.profileId != null && !Number.isNaN(Number(option.profileId))) {
-            payload.ProfileId = Number(option.profileId);
+            payload.profileId = Number(option.profileId);
         }
         if (option.rootFolder) {
-            payload.RootFolder = option.rootFolder;
+            payload.rootFolder = option.rootFolder;
         }
 
         if (mediaType === 'tv' && option.seasons && option.seasons.length) {
-            payload.Seasons = option.seasons.slice().sort(function (a, b) { return a - b; });
+            payload.seasons = option.seasons.slice().sort(function (a, b) { return a - b; });
         }
 
         const requestId = option.requestId ? parseInt(option.requestId, 10) : 0;
@@ -2096,7 +2094,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     : {
                         url: ApiClient.getUrl('JellySeerr/watchlist'),
                         type: 'POST',
-                        data: JSON.stringify({ MediaType: mediaType, MediaId: mediaId }),
+                        data: JSON.stringify({ mediaType: mediaType, mediaId: mediaId }),
                         contentType: 'application/json'
                     };
                 ApiClient.ajax(req).then(function () {
@@ -2241,7 +2239,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 ApiClient.ajax({
                     url: ApiClient.getUrl('JellySeerr/issue'),
                     type: 'POST',
-                    data: JSON.stringify({ IssueType: 1, Message: message, MediaId: seerrMediaId }),
+                    data: JSON.stringify({ issueType: 1, message: message, mediaId: seerrMediaId }),
                     contentType: 'application/json'
                 }).then(function () {
                     notifyUser('Issue reported');
