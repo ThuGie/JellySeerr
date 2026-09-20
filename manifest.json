@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.15.0",
+        "changelog": "Fix request create crash from duplicate MediaType/mediaType JSON property names under System.Text.Json.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.15.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "9673C1713D1876FB6200DF63ABEDD92A",
+        "timestamp": "2026-09-20T20:40:13.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.14.0",
         "changelog": "Requests tab defaults to All for managers; Mine/All styled like the status filter tabs.",
         "targetAbi": "10.11.0.0",
