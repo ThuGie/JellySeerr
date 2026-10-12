@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Fix request create crash from duplicate MediaType/mediaType JSON property names under System.Text.Json.",
+  "changelog": "Dual-layout tabs: Movies, TV, and Requests work on legacy headerTabs and experimental AppBar when the native tab strip is hidden.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-20T00:00:00.0000000Z",
-  "version": "1.0.15.0",
+  "version": "1.0.16.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

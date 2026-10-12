@@ -54,6 +54,8 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         _ensureRetryTimers: null,
         _cleanupTimer: null,
         _homePageObserver: null,
+        _modernNavEnsuring: false,
+        _activeModernTabId: null,
 
         TAB_DEFS: {
             movies: { sectionClass: 'jellySeerr-movies-sections', defaultTitle: 'Movies' },
@@ -194,12 +196,18 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
         isHomeHash: function () {
             const hash = String(window.location.hash || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
-            return hash === '' ||
+            if (hash === '' ||
                 hash === '#' ||
                 hash === '#/home' ||
                 hash === '#/home.html' ||
                 hash === '#home' ||
-                hash === '#home.html';
+                hash === '#home.html') {
+                return true;
+            }
+
+            // HashRouter keeps the route in the hash; also accept pathname-style home.
+            const path = String(window.location.pathname || '').replace(/\/+$/, '').toLowerCase();
+            return path === '/home' || path.endsWith('/home');
         },
 
         isHomeViewEvent: function (event) {
@@ -234,6 +242,54 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             return !visiblePage || visiblePage.id === 'indexPage';
         },
 
+        isElementLaidOut: function (el) {
+            if (!el || !el.isConnected) {
+                return false;
+            }
+            // Prefer client rects: fixed MUI AppBars report offsetParent === null while visible.
+            try {
+                if (el.getClientRects().length > 0) {
+                    return true;
+                }
+            } catch (err) {
+                // ignore
+            }
+            return el.offsetParent !== null;
+        },
+
+        isExperimentalLayout: function () {
+            try {
+                if (String(localStorage.getItem('layout') || '').toLowerCase() === 'experimental') {
+                    return true;
+                }
+            } catch (err) {
+                // ignore
+            }
+            return this.isElementLaidOut(document.querySelector('.MuiAppBar-root .MuiToolbar-root'));
+        },
+
+        isLegacyTabBarUsable: function () {
+            const headerTabs = document.querySelector('.headerTabs');
+            if (!headerTabs || headerTabs.classList.contains('hide')) {
+                return false;
+            }
+            const slider = headerTabs.querySelector('.emby-tabs-slider');
+            const tabs = headerTabs.querySelector('[is="emby-tabs"]');
+            return this.isElementLaidOut(slider) && this.isElementLaidOut(tabs);
+        },
+
+        getHeaderTabsElements: function () {
+            const headerTabs = document.querySelector('.headerTabs');
+            if (!headerTabs) {
+                return { headerTabs: null, tabsSlider: null, tabsEl: null };
+            }
+            return {
+                headerTabs: headerTabs,
+                tabsSlider: headerTabs.querySelector('.emby-tabs-slider'),
+                tabsEl: headerTabs.querySelector('[is="emby-tabs"]')
+            };
+        },
+
         clearEnsureRetries: function () {
             (this._ensureRetryTimers || []).forEach(function (timer) {
                 clearTimeout(timer);
@@ -247,10 +303,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             self.clearEnsureRetries();
             [0, 50, 150, 400, 900, 1800, 3500, 6000].forEach(function (delay) {
                 const timer = setTimeout(function () {
-                    if (!self.isHomeHash()) {
-                        return;
-                    }
-                    self.ensureNativeTabs().then(function () {
+                    self.ensureTabChrome().then(function () {
                         if (self.isHomeTabContext()) {
                             self.scheduleRender();
                         }
@@ -282,6 +335,199 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             document.querySelectorAll('.headerTabs [data-jellySeerr-tab]').forEach(function (btn) {
                 btn.remove();
             });
+            // Keep modern AppBar nav; it mirrors Favorites and stays available off-home.
+            this._activeModernTabId = null;
+            this.updateModernNavActiveState(null);
+        },
+
+        removeModernTabNav: function () {
+            document.querySelectorAll('[data-jellySeerr-modern-nav]').forEach(function (node) {
+                node.remove();
+            });
+        },
+
+        getVisibleMuiToolbar: function () {
+            const toolbars = document.querySelectorAll('.MuiAppBar-root .MuiToolbar-root');
+            for (let i = 0; i < toolbars.length; i++) {
+                if (this.isElementLaidOut(toolbars[i])) {
+                    return toolbars[i];
+                }
+            }
+            return null;
+        },
+
+        findModernNavMount: function () {
+            const toolbar = this.getVisibleMuiToolbar();
+            if (!toolbar) {
+                return null;
+            }
+
+            // Prefer the AppBar action tray (sibling before the user-menu box) — survives
+            // UserViewNav re-renders better than splicing between React-managed nav links.
+            const userMenuBtn = toolbar.querySelector('[aria-controls="app-user-menu"]');
+            if (userMenuBtn) {
+                const userMenuBox = userMenuBtn.closest('.MuiBox-root') || userMenuBtn.parentElement;
+                const actionTray = userMenuBox && userMenuBox.previousElementSibling;
+                if (actionTray) {
+                    return { parent: actionTray, after: null };
+                }
+            }
+
+            const links = toolbar.querySelectorAll('a[href]');
+            for (let i = 0; i < links.length; i++) {
+                const href = String(links[i].getAttribute('href') || '');
+                if (/\/home\?tab=1\b/.test(href) || /#\/home\?tab=1\b/.test(href)) {
+                    return { parent: links[i].parentNode || toolbar, after: links[i] };
+                }
+            }
+
+            return { parent: toolbar, after: null };
+        },
+
+        buildModernNavSlots: function (config) {
+            const self = this;
+            return (config.tabs || []).filter(function (tab) {
+                return tab && tab.enabled !== false && self.TAB_DEFS[tab.id];
+            }).map(function (tab) {
+                return {
+                    id: tab.id,
+                    title: self.resolveTabTitle(tab.id, tab.title)
+                };
+            });
+        },
+
+        updateModernNavActiveState: function (activeId) {
+            this._activeModernTabId = activeId || null;
+            document.querySelectorAll('[data-jellySeerr-modern-nav] [data-jellySeerr-modern-tab]').forEach(function (btn) {
+                const id = btn.getAttribute('data-jellySeerr-modern-tab');
+                const isActive = !!(activeId && id === activeId);
+                btn.classList.toggle('jellySeerr-modern-tab--active', isActive);
+                btn.setAttribute('aria-current', isActive ? 'page' : 'false');
+            });
+        },
+
+        selectjellySeerrTab: function (id) {
+            const self = this;
+            const tabId = String(id || '').toLowerCase();
+            if (!self.TAB_DEFS[tabId]) {
+                return Promise.resolve();
+            }
+
+            function activate () {
+                return self.ensureNativeTabs().then(function () {
+                    const tabs = self.getHeaderTabsElements();
+                    const button = tabs.tabsSlider &&
+                        tabs.tabsSlider.querySelector('[data-jellySeerr-tab="' + tabId + '"]');
+                    if (!button) {
+                        log.warn('modern nav: missing header button for ' + tabId);
+                        return;
+                    }
+
+                    const index = parseInt(button.getAttribute('data-index'), 10);
+                    self.updateModernNavActiveState(tabId);
+
+                    if (tabs.tabsEl && typeof tabs.tabsEl.selectedIndex === 'function' && !isNaN(index)) {
+                        try {
+                            tabs.tabsEl.selectedIndex(index);
+                        } catch (err) {
+                            button.click();
+                        }
+                    } else {
+                        button.click();
+                    }
+
+                    self.syncTabPanelsActiveState(index);
+                    self.onjellySeerrTabShown();
+                });
+            }
+
+            if (!self.isHomeHash()) {
+                const router = window.Emby && window.Emby.Page;
+                if (router && typeof router.show === 'function') {
+                    return Promise.resolve(router.show('home')).then(function () {
+                        return activate();
+                    }).catch(function () {
+                        window.location.hash = '#/home';
+                        return new Promise(function (resolve) {
+                            setTimeout(function () {
+                                activate().then(resolve);
+                            }, 350);
+                        });
+                    });
+                }
+                window.location.hash = '#/home';
+                return new Promise(function (resolve) {
+                    setTimeout(function () {
+                        activate().then(resolve);
+                    }, 350);
+                });
+            }
+
+            return activate();
+        },
+
+        ensureModernTabNav: function (config) {
+            const self = this;
+            if (!self.isExperimentalLayout() || self.isLegacyTabBarUsable()) {
+                self.removeModernTabNav();
+                return;
+            }
+
+            if (!self.isHomeHash() && !self.getVisibleMuiToolbar()) {
+                self.removeModernTabNav();
+                return;
+            }
+
+            const slots = self.buildModernNavSlots(config || { tabs: self.getDefaultTabConfig() });
+            if (!slots.length) {
+                self.removeModernTabNav();
+                return;
+            }
+
+            const mount = self.findModernNavMount();
+            if (!mount || !mount.parent) {
+                return;
+            }
+
+            let nav = document.querySelector('[data-jellySeerr-modern-nav]');
+            if (!nav || !nav.isConnected) {
+                nav = document.createElement('div');
+                nav.setAttribute('data-jellySeerr-modern-nav', '1');
+                nav.className = 'jellySeerr-modern-nav';
+                nav.setAttribute('role', 'navigation');
+                nav.setAttribute('aria-label', 'JellySeerr');
+            }
+
+            const desired = slots.map(function (slot) { return slot.id + '=' + slot.title; }).join('|');
+            if (nav.dataset.jellySeerrModernSig === desired && mount.parent.contains(nav)) {
+                self.updateModernNavActiveState(self._activeModernTabId);
+                return;
+            }
+
+            nav.dataset.jellySeerrModernSig = desired;
+            nav.innerHTML = '';
+            slots.forEach(function (slot) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'jellySeerr-modern-tab';
+                btn.setAttribute('data-jellySeerr-modern-tab', slot.id);
+                btn.textContent = slot.title;
+                btn.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    self.selectjellySeerrTab(slot.id);
+                });
+                nav.appendChild(btn);
+            });
+
+            if (mount.after && mount.after.parentNode === mount.parent) {
+                mount.parent.insertBefore(nav, mount.after.nextSibling);
+            } else {
+                mount.parent.appendChild(nav);
+            }
+
+            self.updateModernNavActiveState(self._activeModernTabId);
+            log.info('modern tab nav ready: ' + slots.map(function (s) { return s.id; }).join(', '));
         },
 
         jellySeerrBarKey: function (id) {
@@ -465,13 +711,17 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 self.syncTabPanelsActiveState(index);
 
                 const selectedButton = tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
-                if (selectedButton && selectedButton.getAttribute('data-jellySeerr-tab')) {
+                const pluginTabId = selectedButton && selectedButton.getAttribute('data-jellySeerr-tab');
+                if (pluginTabId) {
+                    self.updateModernNavActiveState(pluginTabId);
                     log.info('jellySeerr tab before change to index ' + index);
                     setTimeout(function () {
                         if (self.isHomeTabContext()) {
                             self.onjellySeerrTabShown();
                         }
                     }, 0);
+                } else {
+                    self.updateModernNavActiveState(null);
                 }
             }, true);
 
@@ -954,9 +1204,13 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     }
 
                     const page = document.getElementById('indexPage');
-                    const tabsSlider = document.querySelector('.headerTabs .emby-tabs-slider');
-                    const tabsEl = document.querySelector('.headerTabs [is="emby-tabs"]');
+                    const tabs = self.getHeaderTabsElements();
+                    const tabsSlider = tabs.tabsSlider;
+                    const tabsEl = tabs.tabsEl;
+                    // Inject into header tab DOM even when experimental hides .skinHeader —
+                    // panels + indices still drive content; modern nav is the visible chrome.
                     if (!page || !tabsSlider || !tabsEl || !self.homePageExists()) {
+                        self.ensureModernTabNav(config);
                         self._tabsEnsureQueued = true;
                         return;
                     }
@@ -979,16 +1233,19 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     if (desiredSig === currentSig && panelsMatch) {
                         self._tabsEnsureQueueCount = 0;
                         self.applyTabTitles(tabsSlider, slots);
+                        self.ensureModernTabNav(config);
                         return;
                     }
 
                     if (!self.applyBarOrder(page, tabsSlider, slots)) {
+                        self.ensureModernTabNav(config);
                         self._tabsEnsureQueued = true;
                         return;
                     }
 
                     self._tabsEnsureQueueCount = 0;
                     log.info('native tab bar ready: ' + slots.map(function (s) { return s.key; }).join(', '));
+                    self.ensureModernTabNav(config);
 
                     if (typeof tabsEl.refresh === 'function') {
                         try {
@@ -1017,6 +1274,19 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             return self._tabsEnsuring;
         },
 
+        ensureTabChrome: function () {
+            const self = this;
+            if (self.isHomeHash()) {
+                return self.ensureNativeTabs();
+            }
+
+            return self.loadTabConfig().then(function (config) {
+                self.ensureModernTabNav(config);
+            }).catch(function (err) {
+                log.warn('modern tab nav ensure failed', err);
+            });
+        },
+
         setupNativeTabWatchers: function () {
             const self = this;
             log.info('native tab watchers ready');
@@ -1028,6 +1298,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 }
 
                 self.scheduleHeaderCleanup();
+                self.ensureTabChrome();
                 self.scheduleRender();
             });
 
@@ -1037,24 +1308,43 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     return;
                 }
                 self.scheduleHeaderCleanup();
+                self.ensureTabChrome();
             });
 
             window.addEventListener('pageshow', function () {
-                if (self.isHomeHash()) {
-                    self.scheduleEnsureNativeTabs();
-                }
+                self.scheduleEnsureNativeTabs();
             });
 
             if (!self._ctButtonObserver && typeof MutationObserver !== 'undefined') {
                 const bindHeaderObserver = function () {
-                    const header = document.querySelector('.skinHeader');
-                    const root = header || document.body;
-                    if (self._headerObserveRoot === root) {
+                    const roots = [];
+                    const skinHeader = document.querySelector('.skinHeader');
+                    const appBar = document.querySelector('.MuiAppBar-root');
+                    const reactRoot = document.getElementById('reactRoot');
+                    if (skinHeader) {
+                        roots.push(skinHeader);
+                    }
+                    if (appBar) {
+                        roots.push(appBar);
+                    }
+                    if (reactRoot) {
+                        roots.push(reactRoot);
+                    }
+                    if (!roots.length && document.body) {
+                        roots.push(document.body);
+                    }
+
+                    const key = roots.map(function (node) {
+                        return node.className || node.id || node.tagName;
+                    }).join('|');
+                    if (self._headerObserveKey === key) {
                         return;
                     }
-                    self._headerObserveRoot = root;
+                    self._headerObserveKey = key;
                     self._ctButtonObserver.disconnect();
-                    self._ctButtonObserver.observe(root, { childList: true, subtree: true });
+                    roots.forEach(function (root) {
+                        self._ctButtonObserver.observe(root, { childList: true, subtree: true });
+                    });
                 };
 
                 self._ctButtonObserver = new MutationObserver(function () {
@@ -1067,6 +1357,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                             self.ensureNativeTabs();
                         } else {
                             self.scheduleHeaderCleanup();
+                            self.ensureTabChrome();
                         }
                     }, 150);
                 });

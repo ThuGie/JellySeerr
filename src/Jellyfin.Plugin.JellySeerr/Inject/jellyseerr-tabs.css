@@ -6,6 +6,49 @@
     --jellySeerr-discover-portrait-width: 13.333em;
 }
 
+/* Experimental / modern AppBar fallback when legacy .headerTabs is not laid out */
+.jellySeerr-modern-nav {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 0.15em;
+    margin: 0 0.35em;
+    max-width: min(42vw, 28em);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+
+.jellySeerr-modern-tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.72;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    padding: 0.35em 0.65em;
+    border-radius: 0.35em;
+    line-height: 1.2;
+}
+
+.jellySeerr-modern-tab:hover,
+.jellySeerr-modern-tab:focus-visible {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
+.jellySeerr-modern-tab--active {
+    opacity: 1;
+    color: var(--theme-primary-color, #00a4dc);
+}
+
 .jellySeerr-box-card {
     cursor: pointer;
 }
