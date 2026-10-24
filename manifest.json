@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.24.0",
+        "changelog": "Make the selected calendar month and year prominent in a large centered heading directly above the schedule, with adjacent month navigation. Remove the Sonarr instance selector and server labels from the calendar interface.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.24.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "65188F8E8187C36C0D647FBBC3E0B1CF",
+        "timestamp": "2026-10-24T21:51:01.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.23.0",
         "changelog": "Add a dedicated monitored Sonarr release calendar page with a top-header calendar icon, month and agenda views, local air times, instance and title filters, available-file markers and series awaiting an air date. Include monitored titles regardless of requester, preserve 4K permissions, and cache/shared-load instance data with partial failure reporting.",
         "targetAbi": "10.11.0.0",
