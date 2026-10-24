@@ -616,8 +616,20 @@ public class JellySeerrController : ControllerBase
         [FromServices] ServarrReleaseService releases, [FromBody] ReleaseDownloadPayload payload, CancellationToken cancellationToken) =>
         WithReleaseContext(id, users, context => releases.DownloadAsync(context, payload, cancellationToken), cancellationToken, sharedSeason: payload.SeasonNumber.HasValue);
 
+    [HttpGet("request/{id:int}/availability")]
+    [Authorize]
+    public Task<IActionResult> GetAvailability(int id, [FromServices] IUserManager users,
+        [FromServices] ServarrReleaseService releases, CancellationToken cancellationToken) =>
+        WithReleaseContext(id, users, context => releases.AvailabilityAsync(context, cancellationToken), cancellationToken, availabilityOnly: true);
+
+    [HttpPost("request/{id:int}/search-missing")]
+    [Authorize]
+    public Task<IActionResult> SearchMissing(int id, [FromServices] IUserManager users,
+        [FromServices] ServarrReleaseService releases, [FromBody] MissingEpisodeSearchPayload payload, CancellationToken cancellationToken) =>
+        WithReleaseContext(id, users, context => releases.SearchMissingAsync(context, payload, cancellationToken), cancellationToken);
+
     private async Task<IActionResult> WithReleaseContext(int requestId, IUserManager users,
-        Func<ReleaseContext, Task<JObject>> action, CancellationToken ct, bool sharedSeason = false)
+        Func<ReleaseContext, Task<JObject>> action, CancellationToken ct, bool sharedSeason = false, bool availabilityOnly = false)
     {
         Response.Headers.CacheControl = "no-store";
         Guid userId = GetUserId();
@@ -632,7 +644,8 @@ public class JellySeerrController : ControllerBase
             JObject? request = await _seerr.GetJsonAsync($"/api/v1/request/{requestId}", null, ct).ConfigureAwait(false) as JObject;
             if (request == null) return NotFound(new { message = "Request could not be loaded." });
             bool canChooseEpisodes = ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match));
-            if (!ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match), sharedSeason))
+            if (!(availabilityOnly ? AvailabilityPolicy.CanView(request, match.Id, IsAdministrator(users, userId, match))
+                : ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match), sharedSeason)))
                 return StatusCode(403, new { message = "Choose an approved request. Other users' TV requests allow whole-season replacement only." });
             string? type = request.Value<string>("type");
             if (type is not ("movie" or "tv")) return BadRequest(new { message = "Unsupported media type." });
@@ -640,6 +653,11 @@ public class JellySeerrController : ControllerBase
             PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
             if (!UserMappingService.HasRequestPermission(match.Permissions, type, is4k) || is4k && config.Disable4k)
                 return Forbid();
+            if (availabilityOnly && request.Value<int>("status") is not (2 or 5))
+            {
+                JObject early = await action(new ReleaseContext(userId, request, new JObject(), false, false)).ConfigureAwait(false);
+                return Content(early.ToString(Newtonsoft.Json.Formatting.None), "application/json");
+            }
             string serverType = type == "tv" ? "sonarr" : "radarr";
             // Resolve the request's actual server, including separate 4K/anime instances. Never use
             // an arbitrary default server with coincidentally identical internal movie/episode IDs.

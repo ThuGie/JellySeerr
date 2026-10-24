@@ -30,6 +30,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     let activeSeasonRoot = null;
     let activeQualityRoot = null;
     let activeReleaseDialog = null;
+    let activeAvailabilityDialog = null;
     let escapeHandler = null;
     let pendingRequestContext = null;
     let clientSettingsCache = {};
@@ -1223,6 +1224,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function closeDetailsModal() {
         ++detailsGeneration;
+        if (activeAvailabilityDialog) activeAvailabilityDialog.close();
         if (activeReleaseDialog) activeReleaseDialog.close();
         pendingRequestContext = null;
         closeQualityModal();
@@ -1972,6 +1974,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                     : ''}
                                                 <button type="button" class="bst-btn-ghost" data-action="watchlist" data-watchlisted="${isOnWatchlist(data) ? 'true' : 'false'}">${isOnWatchlist(data) ? 'Remove from watchlist' : 'Watchlist'}</button>
                                                 <button type="button" class="bst-btn-ghost" data-action="advanced-download">Advanced download</button>
+                                                <button type="button" class="bst-btn-ghost" data-action="availability">${mediaType === 'tv' ? 'Episodes & status' : 'Download status'}</button>
                                                 ${browseUrl && tmdbId
                                                     ? `<button type="button" class="bst-btn-ghost" data-action="open-seerr">Open in Seerr</button>`
                                                     : ''}
@@ -2029,7 +2032,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
             </div>`;
     }
 
-    function openReleasePicker(data, mediaType) {
+    function openReleasePicker(data, mediaType, initialSelection) {
         if (activeReleaseDialog) activeReleaseDialog.close();
         const requests = getRequestRecords(data).filter(function (req) {
             return [2, 5].indexOf(requestStatusOf(req)) !== -1 && (mediaType === 'tv' || canModifyRequest(req));
@@ -2178,6 +2181,11 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     option.textContent = 'S' + e.seasonNumber + ' E' + e.episodeNumber + ' — ' + (e.title || '') + (e.hasFile ? ' (downloaded)' : '');
                     episodeSelect.appendChild(option);
                 });
+                if (initialSelection && String(initialSelection.requestId) === requestSelect.value && canChooseEpisodes) {
+                    modeSelect.value = 'episode';
+                    episodeSelect.value = String(initialSelection.episodeId);
+                    initialSelection = null;
+                }
                 (options.seasons || []).forEach(function (s) {
                     const option = document.createElement('option');
                     option.value = s.seasonNumber;
@@ -2199,6 +2207,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 + (mediaType === 'tv' && !canModifyRequest(req) ? ' · ' + (requestOwnerName(req) || 'Another user') : '');
             requestSelect.appendChild(option);
         });
+        if (initialSelection) requestSelect.value = String(initialSelection.requestId);
         requestSelect.addEventListener('change', loadOptions);
         episodeSelect.addEventListener('change', function () { ++generation; clearSearch(); message.textContent = 'Search for the selected episode.'; });
         modeSelect.addEventListener('change', function () { ++generation; clearSearch(); updateScope(); message.textContent = 'Search for the selected download type.'; });
@@ -2261,7 +2270,166 @@ window.jellySeerrLog = window.jellySeerrLog || {
         }
     }
 
+    function openAvailability(data, mediaType) {
+        if (activeAvailabilityDialog) activeAvailabilityDialog.close();
+        const records = getRequestRecords(data).filter(function (r) {
+            return [1, 2, 3, 4, 5].includes(requestStatusOf(r)) && (mediaType === 'tv' || canModifyRequest(r));
+        }).sort(function (a, b) { return Number(canModifyRequest(b)) - Number(canModifyRequest(a)); });
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bst-release-dialog';
+        dialog.setAttribute('aria-labelledby', 'bst-availability-heading');
+        dialog.innerHTML = '<div class="bst-release-header"><h2 id="bst-availability-heading">Availability & download status</h2>'
+            + '<button type="button" class="bst-btn-ghost" data-close>Close</button></div>'
+            + '<div class="bst-release-controls"><label>Request <select data-request></select></label>'
+            + '<label data-season-label hidden>Season <select data-season></select></label>'
+            + '<button type="button" class="bst-btn-ghost" data-refresh>Refresh status</button></div>'
+            + '<p data-reason></p><div class="bst-release-controls" data-missing-controls hidden>'
+            + '<button type="button" class="bst-btn-request" data-search-missing>Find missing episodes</button>'
+            + '<span data-selection></span></div><p data-message role="status" aria-live="polite"></p>'
+            + '<div data-episodes class="bst-episode-grid"></div>';
+        document.body.appendChild(dialog);
+        activeAvailabilityDialog = dialog;
+        const req = dialog.querySelector('[data-request]');
+        const season = dialog.querySelector('[data-season]');
+        const grid = dialog.querySelector('[data-episodes]');
+        const message = dialog.querySelector('[data-message]');
+        const find = dialog.querySelector('[data-search-missing]');
+        const refresh = dialog.querySelector('[data-refresh]');
+        let snapshot = null, generation = 0, busy = false;
+        function api(action, payload) {
+            return ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/request/' + req.value + '/' + action),
+                type: payload ? 'POST' : 'GET', dataType: 'json', contentType: 'application/json',
+                data: payload ? JSON.stringify(payload) : undefined });
+        }
+        function showError(error) {
+            let text = 'Could not load download status. Check the service connection and try again.';
+            try { text = (error.responseJSON || JSON.parse(error.responseText || '{}')).message || text; } catch (_) { /* Keep the fallback. */ }
+            message.textContent = text;
+        }
+        function updateSelection() {
+            const count = grid.querySelectorAll('input:checked').length;
+            grid.querySelectorAll('input,button').forEach(function (control) { control.disabled = busy; });
+            dialog.querySelector('[data-close]').disabled = busy;
+            find.disabled = busy || count === 0 || count > 100;
+            dialog.querySelector('[data-selection]').textContent = count + ' missing episodes selected' + (count > 100 ? ' (maximum 100)' : '');
+        }
+        function render() {
+            grid.replaceChildren();
+            const episodes = snapshot && snapshot.episodes || [];
+            episodes.filter(function (e) { return String(e.seasonNumber) === season.value; }).forEach(function (e) {
+                const row = document.createElement('article');
+                row.className = 'bst-episode-card';
+                row.dataset.status = e.statusKey;
+                const heading = document.createElement('strong');
+                heading.textContent = 'S' + e.seasonNumber + ' E' + e.episodeNumber + ' — ' + (e.title || 'Episode');
+                const status = document.createElement('span');
+                status.className = 'bst-episode-status';
+                status.textContent = e.statusLabel + (e.percent != null ? ' · ' + e.percent + '%' : '');
+                const reason = document.createElement('p');
+                reason.textContent = e.reason || '';
+                row.append(heading, status, reason);
+                if (e.airDateUtc) {
+                    const date = new Date(e.airDateUtc);
+                    if (!Number.isNaN(date.getTime())) {
+                        const air = document.createElement('p');
+                        air.textContent = 'Air date: ' + date.toLocaleString();
+                        row.appendChild(air);
+                    }
+                }
+                if (e.canSearch) {
+                    const label = document.createElement('label');
+                    const check = document.createElement('input');
+                    check.type = 'checkbox';
+                    check.value = e.id;
+                    check.checked = true;
+                    check.addEventListener('change', updateSelection);
+                    label.append(check, document.createTextNode(' Include in missing-episode search'));
+                    row.appendChild(label);
+                }
+                if (snapshot.canChooseEpisodes && (e.hasFile || e.canSearch)) {
+                    const choose = document.createElement('button');
+                    choose.type = 'button';
+                    choose.className = 'bst-btn-ghost';
+                    choose.textContent = e.hasFile ? 'Choose replacement' : 'Choose release';
+                    choose.addEventListener('click', function () {
+                        const requestId = Number(req.value);
+                        dialog.close();
+                        openReleasePicker(data, mediaType, { requestId: requestId, episodeId: e.id });
+                    });
+                    row.appendChild(choose);
+                }
+                grid.appendChild(row);
+            });
+            updateSelection();
+        }
+        async function load() {
+            const version = ++generation;
+            snapshot = null;
+            grid.replaceChildren();
+            find.disabled = refresh.disabled = true;
+            dialog.querySelector('[data-missing-controls]').hidden = true;
+            dialog.querySelector('[data-reason]').textContent = '';
+            message.textContent = 'Checking download status…';
+            try {
+                const result = await api('availability');
+                if (!dialog.isConnected || version !== generation) return;
+                snapshot = result;
+                dialog.querySelector('[data-reason]').textContent = result.reason || '';
+                message.textContent = result.statusLabel || '';
+                const previous = season.value;
+                season.replaceChildren();
+                Array.from(new Set((result.episodes || []).map(function (e) { return e.seasonNumber; }))).sort(function (a, b) { return a - b; }).forEach(function (n) {
+                    const option = document.createElement('option');
+                    option.value = n;
+                    option.textContent = 'Season ' + n;
+                    season.appendChild(option);
+                });
+                if (Array.from(season.options).some(function (o) { return o.value === previous; })) season.value = previous;
+                dialog.querySelector('[data-season-label]').hidden = !season.options.length;
+                dialog.querySelector('[data-missing-controls]').hidden = !result.canSearchMissing;
+                render();
+            } catch (error) { if (dialog.isConnected && version === generation) showError(error); }
+            finally { if (dialog.isConnected && version === generation) refresh.disabled = false; }
+        }
+        records.forEach(function (r) {
+            const option = document.createElement('option');
+            option.value = requestIdOf(r);
+            option.textContent = (requestIs4k(r) ? '4K' : 'Standard') + ' request #' + requestIdOf(r) + ' · ' + (requestOwnerName(r) || 'Requester');
+            req.appendChild(option);
+        });
+        req.addEventListener('change', load);
+        season.addEventListener('change', render);
+        refresh.addEventListener('click', load);
+        find.addEventListener('click', async function () {
+            const ids = Array.from(grid.querySelectorAll('input:checked')).map(function (c) { return Number(c.value); });
+            if (!ids.length || ids.length > 100 || !window.confirm('Ask Sonarr to find suitable releases for ' + ids.length + ' missing episodes? Existing files will not be deleted. Downloads are not guaranteed.')) return;
+            busy = true;
+            req.disabled = season.disabled = refresh.disabled = true;
+            updateSelection();
+            message.textContent = 'Starting missing-episode search…';
+            try {
+                const result = await api('search-missing', { seasonNumber: Number(season.value), episodeIds: ids });
+                if (!dialog.isConnected) return;
+                await load();
+                if (dialog.isConnected) message.textContent = result.message || 'Search started.';
+            } catch (error) { if (dialog.isConnected) showError(error); }
+            finally {
+                busy = false;
+                if (dialog.isConnected) { req.disabled = season.disabled = refresh.disabled = false; updateSelection(); }
+            }
+        });
+        function close() { if (!busy) dialog.close(); }
+        dialog.querySelector('[data-close]').addEventListener('click', close);
+        dialog.addEventListener('keydown', function (event) { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); close(); } });
+        dialog.addEventListener('cancel', function (event) { event.preventDefault(); close(); });
+        dialog.addEventListener('close', function () { ++generation; dialog.remove(); if (activeAvailabilityDialog === dialog) activeAvailabilityDialog = null; });
+        dialog.showModal();
+        if (records.length) load();
+        else { refresh.disabled = true; message.textContent = 'Request this title first to see its download status.'; }
+    }
+
     function bindDetailsModal(root, data, mediaId, mediaType) {
+        root.querySelector('[data-action="availability"]').addEventListener('click', function () { openAvailability(data, mediaType); });
         root.querySelector('[data-action="advanced-download"]').addEventListener('click', function () {
             openReleasePicker(data, mediaType);
         });

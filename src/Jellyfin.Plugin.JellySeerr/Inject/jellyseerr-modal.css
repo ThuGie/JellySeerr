@@ -1076,6 +1076,14 @@
 .bst-release-row p { color: #b8c1d1; font-size: .9em; }
 .bst-release-dialog button:disabled { opacity: .45; cursor: default; }
 .bst-release-dialog :focus-visible { outline: 2px solid #8bbfff; outline-offset: 3px; }
+.bst-episode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.bst-episode-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; border: 1px solid #394050; border-radius: 8px; overflow-wrap: anywhere; }
+.bst-episode-card p { margin: 0; color: #b8c1d1; font-size: .9em; }
+.bst-episode-status { font-size: .9em; font-weight: 600; }
+.bst-episode-card[data-status="available"] .bst-episode-status { color: #8bdca0; }
+.bst-episode-card[data-status="missing"] .bst-episode-status { color: #ffd084; }
+.bst-episode-card[data-status="import-blocked"] .bst-episode-status,
+.bst-episode-card[data-status="failed"] .bst-episode-status { color: #ff9e9e; }
 @media (max-width: 600px) {
     .bst-release-dialog { padding: 16px; }
     .bst-release-controls label { width: 100%; }

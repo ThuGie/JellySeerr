@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Improve loading across discovery, details, requests and season downloads: defer image downloads, share duplicate fetches, reuse HTTP connections, batch image-cache writes, return browser cache headers, load relevant Arr progress in parallel, scope and bound caches, and stop stale modal responses. Keep release safety checks fresh and add loading regression tests.",
+  "changelog": "Add Episodes & status and movie Download status with clear request, queue and import explanations. Show per-season episode availability with direct release/replacement actions. Add Find missing episodes for selected aired, monitored, missing and unqueued episodes, with fresh checks, ownership enforcement and repeat-search protection. Add availability and missing-search tests.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-20T00:00:00.0000000Z",
-  "version": "1.0.19.0",
+  "version": "1.0.20.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

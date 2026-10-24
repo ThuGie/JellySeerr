@@ -68,6 +68,8 @@ Server-side request submit calls `HasRequestPermission` again before POSTing to 
 | Unmonitor in Arr | Owner of a request on that title **or** admin |
 | Advanced download / Replace file | Owner of an approved/completed request **or** manager; request permissions still required; TV restricted to approved seasons |
 | Replace whole season | Any mapped user with TV request permission, including another user's approved/completed season; 4K permission still required for 4K requests |
+| View episode/download status | Request owner or manager; TV request status can also be viewed by other mapped users with the applicable request permission |
+| Find missing episodes | Owner or manager of an approved/completed TV request; approved seasons only; aired, monitored, missing, unqueued episodes only |
 | Open in Seerr / Radarr / Sonarr | `canOpenLocalServices` (admin + LAN) |
 | Watchlist / Report issue | Mapped user (Seerr enforces further) |
 | Requests tab “All” | Manage-requests + `EnableManagerTools` |

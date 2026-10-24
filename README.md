@@ -40,6 +40,7 @@ https://raw.githubusercontent.com/ThuGie/JellySeerr/main/manifest.json
 - **Search** — Seerr movie and TV hits in Jellyfin search (can be turned off).
 - **Details** — request, trailer, watchlist, similar titles, and a report-issue button after something is requested.
 - **Requests** — status and download progress if Radarr/Sonarr are configured. Click a poster to open the same details page.
+- **Episodes & status / Download status** — see why a request is waiting, check each approved episode's availability, and search selected aired, monitored missing episodes without deleting existing files. [Availability guide](doc/availability.md).
 
 People who are not linked in Seerr can be hidden from the extra tabs (Users tab).
 
