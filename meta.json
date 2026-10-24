@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Add a dedicated monitored Sonarr release calendar page with a top-header calendar icon, month and agenda views, local air times, instance and title filters, available-file markers and series awaiting an air date. Include monitored titles regardless of requester, preserve 4K permissions, and cache/shared-load instance data with partial failure reporting.",
+  "changelog": "Make the selected calendar month and year prominent in a large centered heading directly above the schedule, with adjacent month navigation. Remove the Sonarr instance selector and server labels from the calendar interface.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-20T00:00:00.0000000Z",
-  "version": "1.0.23.0",
+  "version": "1.0.24.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

@@ -4,7 +4,7 @@ Restart Jellyfin after installing the update, then reload the browser.
 
 ## Release calendar (updated in 1.0.23.0)
 
-Click the **calendar icon in Jellyfin's top header**, the **Release calendar** home tab, or **Requests → Release calendar**. They open the same dedicated page. It shows all monitored series/episodes from connected Sonarr instances, regardless of who requested them. Switch between a month grid and an agenda, filter by series/episode or instance, and optionally hide episodes already available. Phones start in agenda view.
+Click the **calendar icon in Jellyfin's top header**, the **Release calendar** home tab, or **Requests → Release calendar**. They open the same dedicated page. It shows all monitored series/episodes from connected Sonarr instances, regardless of who requested them. Switch between a month grid and an agenda, filter by series/episode, and optionally hide episodes already available. Phones start in agenda view.
 
 Air times come from Sonarr and are shown in your browser's local time zone. Continuing/upcoming monitored series with no known next air date appear under **Awaiting an air date**. Ended series and series with monitoring disabled do not appear in that list. Air dates are estimates, not promises of download availability. See the [calendar guide](monitored-calendar.md) for scope and permissions.
 

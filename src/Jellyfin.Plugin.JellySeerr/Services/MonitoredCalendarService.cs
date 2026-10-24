@@ -72,7 +72,7 @@ public sealed class MonitoredCalendarService(IHttpClientFactory clients)
                 : "Could not load the monitored calendar from Sonarr. Check the configured addresses and API keys reachable from Jellyfin.");
         return new JObject { ["events"] = new JArray(events.OrderBy(e => e.Value<DateTimeOffset>("airDateUtc"))),
             ["awaitingDates"] = new JArray(waiting.OrderBy(e => e.Value<string>("title"))), ["failures"] = failures,
-            ["serverCount"] = successful, ["message"] = "All monitored series and episodes on your connected Sonarr instances. Air dates are estimates and do not guarantee download availability." };
+            ["serverCount"] = successful, ["message"] = "Monitored episodes from Sonarr. Air dates are estimates and do not guarantee download availability." };
     }
 
     private static async Task<JArray> Read(HttpClient client, string path, CancellationToken ct)

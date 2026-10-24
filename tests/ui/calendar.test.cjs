@@ -41,11 +41,14 @@ test('monitored calendar is a full page with a month grid and awaiting-date seri
         assert.equal(f.w.document.querySelectorAll('.jellySeerr-calendar-event').length, 2);
         assert.match(f.q('.jellySeerr-calendar-waiting').textContent, /Waiting Show/);
         assert.equal(f.q('img'), null);
+        assert.ok(f.q('.jellySeerr-calendar-month-title').textContent);
+        assert.equal(f.q('.jellySeerr-calendar-month-header').nextElementSibling, f.q('.jellySeerr-calendar-schedule'));
+        assert.equal(f.q('select[aria-label="Sonarr instance"]'), null);
         assert.match(f.calls[0].url, /calendar\/monitored\?start=/);
     } finally { f.close(); }
 });
 
-test('calendar filters instance, text and available episodes and supports agenda view', async () => {
+test('calendar filters text and available episodes and supports agenda view', async () => {
     const f = fixture();
     try {
         f.w.jellySeerrCalendar.mount(f.q('.jellySeerr-calendar-sections')); await tick();
@@ -56,8 +59,7 @@ test('calendar filters instance, text and available episodes and supports agenda
         const search = f.q('input[type=search]'); search.value = 'missing'; search.dispatchEvent(new f.w.Event('input'));
         assert.equal(f.w.document.querySelectorAll('.jellySeerr-calendar-event').length, 0);
         search.value = ''; search.dispatchEvent(new f.w.Event('input'));
-        const server = f.q('select[aria-label="Sonarr instance"]'); server.value = '4K'; server.dispatchEvent(new f.w.Event('change'));
-        assert.equal(f.w.document.querySelectorAll('.jellySeerr-calendar-event').length, 0);
+        assert.equal(f.w.document.querySelectorAll('.jellySeerr-calendar-event').length, 1);
     } finally { f.close(); }
 });
 

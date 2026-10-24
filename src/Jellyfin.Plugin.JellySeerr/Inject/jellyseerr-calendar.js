@@ -33,21 +33,20 @@
         const page = node('section', null, container); page.className = 'jellySeerr-calendar-page';
         node('h1', 'Release calendar', page);
         node('p', 'Upcoming episodes for all monitored series in Sonarr, regardless of who requested them. Times are shown in your local time zone.', page);
-        const toolbar = node('div', null, page); toolbar.className = 'jellySeerr-calendar-toolbar';
         let month = new Date(); month = new Date(month.getFullYear(), month.getMonth(), 1);
-        const previous = button('Previous', toolbar, () => changeMonth(-1));
-        const today = button('Today', toolbar, () => { month = new Date(); month = new Date(month.getFullYear(), month.getMonth(), 1); load(); });
-        const next = button('Next', toolbar, () => changeMonth(1));
-        const heading = node('h2', '', toolbar);
-        const refresh = button('Refresh', toolbar, load);
         const filters = node('div', null, page); filters.className = 'jellySeerr-calendar-toolbar';
         const search = node('input', null, filters); search.type = 'search'; search.placeholder = 'Find a series or episode'; search.setAttribute('aria-label', 'Filter series or episodes');
-        const server = node('select', null, filters); server.setAttribute('aria-label', 'Sonarr instance');
         const view = node('select', null, filters); view.setAttribute('aria-label', 'Calendar view');
         [['month', 'Month'], ['agenda', 'Agenda']].forEach(([value, label]) => { const o = node('option', label, view); o.value = value; });
         if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) view.value = 'agenda';
         const hideLabel = node('label', null, filters); const hide = node('input', null, hideLabel); hide.type = 'checkbox'; hideLabel.appendChild(document.createTextNode(' Hide available episodes'));
+        const today = button('Today', filters, () => { month = new Date(); month = new Date(month.getFullYear(), month.getMonth(), 1); load(); });
+        const refresh = button('Refresh', filters, load);
         const message = node('p', '', page); message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+        const monthHeader = node('div', null, page); monthHeader.className = 'jellySeerr-calendar-month-header';
+        const previous = button('Previous', monthHeader, () => changeMonth(-1)); previous.setAttribute('aria-label', 'Previous month');
+        const heading = node('h2', '', monthHeader); heading.className = 'jellySeerr-calendar-month-title';
+        const next = button('Next', monthHeader, () => changeMonth(1)); next.setAttribute('aria-label', 'Next month');
         const schedule = node('div', null, page); schedule.className = 'jellySeerr-calendar-schedule';
         const waiting = node('section', null, page); waiting.className = 'jellySeerr-calendar-waiting';
         let result = { events: [], awaitingDates: [] }, generation = 0;
@@ -56,7 +55,7 @@
             const start = new Date(month); const mondayOffset = (start.getDay() + 6) % 7; start.setDate(start.getDate() - mondayOffset);
             const end = new Date(start); end.setDate(end.getDate() + 42); return { start, end };
         }
-        function matches(item) { return (!server.value || item.server === server.value) && (item.title + ' ' + (item.episodeTitle || '')).toLowerCase().includes(search.value.trim().toLowerCase()); }
+        function matches(item) { return (item.title + ' ' + (item.episodeTitle || '')).toLowerCase().includes(search.value.trim().toLowerCase()); }
         function titleLink(item, parent) {
             if (Number(item.tmdbId) > 0) {
                 const b = button(item.title, parent, () => window.jellySeerrModal && window.jellySeerrModal.open(item.tmdbId, 'tv')); b.classList.add('jellySeerr-calendar-title');
@@ -69,7 +68,7 @@
             const air = new Date(item.airDateUtc);
             const time = node('time', air.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), card); time.dateTime = air.toISOString();
             node('span', item.hasFile ? ' · Available' : air > new Date() ? ' · Upcoming' : ' · Aired', card);
-            if (!compact) { node('p', [item.network, item.server].filter(Boolean).join(' · '), card); if (item.overview) node('p', item.overview, card); }
+            if (!compact) { if (item.network) node('p', item.network, card); if (item.overview) node('p', item.overview, card); }
         }
         function render() {
             schedule.replaceChildren(); waiting.replaceChildren();
@@ -96,7 +95,7 @@
             node('h2', 'Awaiting an air date (' + unknown.length + ')', waiting);
             node('p', 'Continuing or upcoming monitored series without a known next air date. Sonarr may not have received the schedule yet.', waiting);
             const list = node('div', null, waiting); list.className = 'jellySeerr-calendar-unknown-list';
-            unknown.forEach(show => { const card = node('article', null, list); titleLink(show, card); node('p', [show.network, show.server].filter(Boolean).join(' · '), card); });
+            unknown.forEach(show => { const card = node('article', null, list); titleLink(show, card); if (show.network) node('p', show.network, card); });
         }
         async function load() {
             const version = ++generation; previous.disabled = today.disabled = next.disabled = refresh.disabled = true;
@@ -105,17 +104,15 @@
             try {
                 const data = await ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/calendar/monitored') + '?start=' + encodeURIComponent(start.toISOString()) + '&end=' + encodeURIComponent(end.toISOString()), type: 'GET', dataType: 'json', timeout: 60000 });
                 if (!page.isConnected || version !== generation) return;
-                result = data; const selected = server.value; server.replaceChildren(); node('option', 'All Sonarr instances', server).value = '';
-                [...new Set([...(data.events || []), ...(data.awaitingDates || [])].map(i => i.server))].sort().forEach(name => { node('option', name, server).value = name; });
-                if ([...server.options].some(o => o.value === selected)) server.value = selected;
-                message.textContent = data.message + ((data.failures || []).length ? ' Some instances could not load: ' + data.failures.map(f => f.server + ': ' + f.message).join('; ') : ''); render();
+                result = data;
+                message.textContent = data.message + ((data.failures || []).length ? ' Some calendar data could not load: ' + [...new Set(data.failures.map(f => f.message))].join('; ') : ''); render();
             } catch (error) {
                 let text = 'Could not load the Sonarr calendar' + (error && error.status ? ' (HTTP ' + error.status + ')' : '') + '. Check the service connections.';
                 try { const body = error.responseJSON || await error.clone().json(); text = body.message || text; } catch (_) { /* Keep safe fallback for proxy/network errors. */ }
                 if (page.isConnected && version === generation) message.textContent = text;
             } finally { if (version === generation) previous.disabled = today.disabled = next.disabled = refresh.disabled = false; }
         }
-        [search, server, view, hide].forEach(input => input.addEventListener(input === search ? 'input' : 'change', render)); load();
+        [search, view, hide].forEach(input => input.addEventListener(input === search ? 'input' : 'change', render)); load();
     }
     window.addEventListener('hashchange', () => { routeRestored = false; });
     window.jellySeerrCalendar = { open, ensureMounted, mount, route };

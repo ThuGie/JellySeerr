@@ -6,7 +6,7 @@ Available in **1.0.23.0**. Click the small calendar icon in Jellyfin's top heade
 
 - Episodes for monitored series and monitored seasons/episodes on Sonarr instances configured in Seerr, including separate standard, 4K and anime instances when permitted.
 - Titles monitored by other users or added directly to Sonarr. A personal Seerr request is not required.
-- Month and agenda views, previous/next month, Today, refresh, series/episode search, instance filtering, and an option to hide available files. Small screens start in agenda view.
+- Month and agenda views, previous/next month, Today, refresh, series/episode search, and an option to hide available files. Small screens start in agenda view.
 - Episode/season numbers, episode titles, air times in the browser's local time zone, and whether a file is already available. Agenda cards also show network, instance and overview.
 - **Awaiting an air date** for continuing/upcoming monitored series without a known next scheduled episode. Ended series, unmonitored series, and series whose existing seasons are all unmonitored are excluded from that list. Sonarr's metadata determines this state; scheduling updates may arrive later.
 
