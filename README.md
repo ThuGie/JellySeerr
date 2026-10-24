@@ -2,6 +2,8 @@
 
 JellySeerr adds Movies, TV, and Requests tabs to the Jellyfin web client. You can browse Seerr, send a request, and check progress without leaving Jellyfin.
 
+> **Required dependency:** Install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) as well as JellySeerr. Without it, JellySeerr's Movies, TV, and Requests tabs will not appear. Follow both installation steps below.
+
 Admins decide which Radarr/Sonarr quality profiles are offered. Click a title for details: request it, add or remove it from the Seerr watchlist, or cancel a pending request.
 
 **Advanced download** lets requesters choose a specific movie or episode release for their approved or completed requests, without administrator approval. **Replace whole season** also works on other users' approved TV requests, with an affected-episode list and confirmation. Search results show quality, size, indexer, seeders and rejection reasons. Optionally mark the original releases as bad so Sonarr/Radarr blocklists those releases, not the indexer. Old files are removed only after the chosen replacement is accepted by the download client. [Usage and limitations](doc/advanced-downloads.md).
@@ -16,14 +18,30 @@ Loading and caching improvements are documented in the [performance review](doc/
 
 ## Install from catalog
 
-1. Open **Dashboard → Plugins → Repositories**.
-2. Add a repository with this URL:
+### 1. Install File Transformation (required)
+
+1. Open **Dashboard → Plugins → Repositories** and add the File Transformation repository:
+
+```
+https://www.iamparadox.dev/jellyfin/plugins/manifest.json
+```
+
+2. Open the plugin catalog, find **File Transformation**, and install the version compatible with your Jellyfin server.
+3. Restart Jellyfin. File Transformation requires no configuration.
+
+These steps follow the dependency's [official installation instructions](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation#installation).
+
+### 2. Install JellySeerr
+
+1. Return to **Dashboard → Plugins → Repositories**.
+2. Add the JellySeerr repository:
 
 ```
 https://raw.githubusercontent.com/ThuGie/JellySeerr/main/manifest.json
 ```
 
 3. Open **Plugins**, set the filter to **All**, install **JellySeerr**, then restart Jellyfin.
+4. Complete the setup below, then reload the Jellyfin web client. If an existing browser session still shows the old interface, perform a hard refresh (**Ctrl+F5**) or clear the site's browser cache.
 
 ## First-time setup
 
@@ -57,6 +75,10 @@ The fallbacks are only used when someone submits a request without picking a pro
 Open the title from Requests (or from Movies/TV). Pending items can be cancelled there. Managers can approve, decline, or retry, and can switch between Mine and All.
 
 ## FAQ
+
+**JellySeerr is installed, but Movies / TV / Requests do not appear.**
+
+First check **Dashboard → Plugins** for **File Transformation**. It is a separate required plugin, not included with JellySeerr. Install it using the repository above, restart Jellyfin, and hard-refresh the browser. Also confirm that your Jellyfin user is linked in Seerr and that the tabs are enabled in JellySeerr's settings. These additions are for the Jellyfin web client; native clients do not automatically gain these tabs.
 
 **A household member sees broken Movies/TV tabs.**  
 They need a matching Seerr user (`jellyfinUsername` or Jellyfin user id). Enable **Hide JellySeerr tabs for users who are not linked**.
