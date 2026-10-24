@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.22.0",
+        "changelog": "Fix hidden release-search errors by reading Jellyfin Fetch responses. Run release searches and downloads as bounded, user-scoped background operations with status polling, support 15-minute indexer searches, show failing Sonarr/Radarr operation and HTTP status, and prevent duplicate grabs on retries.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.22.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "CA2921416CF74D4AA8CFAF05C6B83106",
+        "timestamp": "2026-10-24T18:42:09.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.21.0",
         "changelog": "Add the personal release calendar, Seerr notification preferences, categorized episode issue reporting and comments, persistent replacement history, release comparison, and scoped failed/stalled download recovery with specific-release blocklisting. Preserve whole-season permissions and add backend and interface coverage.",
         "targetAbi": "10.11.0.0",
