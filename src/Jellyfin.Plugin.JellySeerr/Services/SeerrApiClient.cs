@@ -1,5 +1,6 @@
 using System.Text;
 using Jellyfin.Plugin.JellySeerr.Configuration;
+using Jellyfin.Plugin.JellySeerr.Helpers;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -23,11 +24,7 @@ public class SeerrApiClient
     public HttpClient CreateClient(PluginConfiguration? config = null, int? seerrUserId = null)
     {
         config ??= JellySeerrPlugin.Instance.Configuration;
-        HttpClient client = new()
-        {
-            BaseAddress = new Uri(config.JellyseerrUrl!.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromSeconds(30)
-        };
+        HttpClient client = PooledHttpClients.Create(new Uri(config.JellyseerrUrl!.TrimEnd('/') + "/"));
         client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
         if (seerrUserId != null)
         {
@@ -66,6 +63,12 @@ public class SeerrApiClient
             using HttpResponseMessage response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             string contentType = response.Content.Headers.ContentType?.MediaType ?? "application/json";
+            if (response.IsSuccessStatusCode && method != HttpMethod.Get && method != HttpMethod.Head)
+            {
+                JsonMemoryCache.RemoveByPrefix("requests:");
+                JsonMemoryCache.RemoveByPrefix("discover:");
+                JsonMemoryCache.RemoveByPrefix("request-details:");
+            }
             return ((int)response.StatusCode, responseBody, contentType);
         }
         catch (Exception ex)

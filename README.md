@@ -6,6 +6,8 @@ Admins decide which Radarr/Sonarr quality profiles are offered. Click a title fo
 
 **Advanced download** lets requesters choose a specific movie or episode release for their approved or completed requests, without administrator approval. **Replace whole season** also works on other users' approved TV requests, with an affected-episode list and confirmation. Search results show quality, size, indexer, seeders and rejection reasons. Optionally mark the original releases as bad so Sonarr/Radarr blocklists those releases, not the indexer. Old files are removed only after the chosen replacement is accepted by the download client. [Usage and limitations](doc/advanced-downloads.md).
 
+Loading and caching improvements are documented in the [performance review](doc/performance-review.md), including what was tested and which paths still need live-server measurements.
+
 ## Prerequisites
 
 - Jellyfin **10.11.9+** (10.11.x catalog ABI)

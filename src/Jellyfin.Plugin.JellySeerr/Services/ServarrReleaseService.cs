@@ -214,12 +214,12 @@ public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<S
         return title ?? throw new ReleaseSelectionException(409, "This title is not in Sonarr/Radarr yet. Wait for the approved request to reach the server, then try again.");
     }
 
-    private static async Task<JArray> Episodes(HttpClient client, ReleaseContext context, JObject title, CancellationToken ct)
+    private static async Task<JArray> Episodes(HttpClient client, ReleaseContext context, JObject title, CancellationToken ct, JArray? suppliedEpisodes = null)
     {
         HashSet<int> seasons = (context.Request["seasons"] as JArray)?.OfType<JObject>()
             .Where(s => s.Value<int?>("status") is 2 or 5)
             .Select(s => s.Value<int>("seasonNumber")).ToHashSet() ?? [];
-        JArray all = (JArray)await Read(client, $"episode?seriesId={title.Value<int>("id")}", ct);
+        JArray all = suppliedEpisodes ?? (JArray)await Read(client, $"episode?seriesId={title.Value<int>("id")}", ct);
         return new JArray(all.OfType<JObject>().Where(e => seasons.Contains(e.Value<int>("seasonNumber")))
             .OrderBy(e => e.Value<int>("seasonNumber")).ThenBy(e => e.Value<int>("episodeNumber")));
     }

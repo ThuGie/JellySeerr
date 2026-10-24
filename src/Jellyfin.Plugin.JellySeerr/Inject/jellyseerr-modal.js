@@ -34,6 +34,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
     let pendingRequestContext = null;
     let clientSettingsCache = {};
     let quotaCache = { at: 0, data: null };
+    let quotaRequest = null;
+    let quotaUser = null;
+    let settingsRequest = null;
+    let settingsUser = null;
+    let settingsAt = 0;
+    let detailsGeneration = 0;
+    const tmdbResponseCache = new Map();
 
     function formatQuotaPart(entry, label) {
         if (!entry) {
@@ -66,19 +73,25 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     window.jellySeerrQuota = {
         fetch: function () {
-            if (quotaCache.data && Date.now() - quotaCache.at < 30000) {
+            const user = ApiClient.getCurrentUserId ? ApiClient.getCurrentUserId() : '';
+            if (quotaUser === user && quotaCache.data && Date.now() - quotaCache.at < 30000) {
                 return Promise.resolve(quotaCache.data);
             }
-            return ApiClient.ajax({
+            if (quotaUser === user && quotaRequest) return quotaRequest;
+            quotaUser = user;
+            quotaCache = { at: 0, data: null };
+            const request = ApiClient.ajax({
                 url: ApiClient.getUrl('JellySeerr/quota'),
                 type: 'GET',
                 dataType: 'json'
             }).then(function (data) {
-                quotaCache = { at: Date.now(), data: data };
+                if (quotaUser === user && quotaRequest === request) quotaCache = { at: Date.now(), data: data };
                 return data;
             }).catch(function () {
                 return null;
-            });
+            }).finally(function () { if (quotaRequest === request) quotaRequest = null; });
+            quotaRequest = request;
+            return request;
         },
         formatSummary: formatQuotaSummary
     };
@@ -204,6 +217,9 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function fetchTmdbJson(url, apiKey) {
+        const cacheKey = apiKey + ':' + url;
+        const cached = tmdbResponseCache.get(cacheKey);
+        if (cached && cached.expires > Date.now()) return cached.promise;
         const headers = { accept: 'application/json' };
         let requestUrl = url;
 
@@ -213,12 +229,19 @@ window.jellySeerrLog = window.jellySeerrLog || {
             requestUrl = appendTmdbQuery(url, 'api_key', apiKey);
         }
 
-        return fetch(requestUrl, { headers: headers }).then(function (response) {
+        const entry = { expires: Date.now() + 300000, promise: null };
+        entry.promise = fetch(requestUrl, { headers: headers }).then(function (response) {
             if (!response.ok) {
                 throw new Error('TMDB request failed: ' + response.status);
             }
             return response.json();
+        }).catch(function (error) {
+            if (tmdbResponseCache.get(cacheKey) === entry) tmdbResponseCache.delete(cacheKey);
+            throw error;
         });
+        if (tmdbResponseCache.size >= 80) tmdbResponseCache.delete(tmdbResponseCache.keys().next().value);
+        tmdbResponseCache.set(cacheKey, entry);
+        return entry.promise;
     }
 
     function mapRelatedList(raw) {
@@ -375,22 +398,13 @@ window.jellySeerrLog = window.jellySeerrLog || {
         let detailsUrl = 'https://api.themoviedb.org/3/' + segment + '/' + mediaId;
         detailsUrl = appendTmdbQuery(detailsUrl, 'append_to_response', append);
 
-        return Promise.all([
-            fetchTmdbJson(detailsUrl, apiKey),
+        const artwork = Promise.all([
             fetchTmdbLogoPath(mediaId, mediaType, apiKey),
             fetchSettingsBackdrop(mediaId, mediaType)
-        ]).then(function (results) {
-            const raw = results[0];
-            const logoPath = results[1];
-            const backdrop = results[2];
+        ]);
+        return fetchTmdbJson(detailsUrl, apiKey).then(function (raw) {
             const mapped = isTv ? mapTvDetails(raw) : mapMovieDetails(raw);
-            if (logoPath) {
-                mapped.logoPath = logoPath;
-            }
-            if (backdrop) {
-                mapped.backdropUrl = resolveImageUrl(backdrop.backdropUrl || backdrop.BackdropUrl || '');
-                mapped.backdropPath = backdrop.tmdbBackdropPath || backdrop.TmdbBackdropPath || mapped.backdropPath;
-            }
+            mapped._artworkPromise = artwork;
             return mapped;
         }).catch(function (err) {
             log.warn('TMDB details fetch failed', err);
@@ -966,7 +980,10 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function reloadDetailsModal(mediaId, mediaType) {
+        const generation = detailsGeneration;
+        const previousRoot = activeDetailsRoot;
         return loadModalDetails(mediaId, mediaType).then(function (data) {
+            if (generation !== detailsGeneration || activeDetailsRoot !== previousRoot || !previousRoot) return;
             const dom = buildDetailsDom(data, mediaId, mediaType);
             if (activeDetailsRoot) {
                 activeDetailsRoot.replaceWith(dom);
@@ -1039,17 +1056,33 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function loadClientSettings() {
+        const user = ApiClient.getCurrentUserId ? ApiClient.getCurrentUserId() : '';
+        if (settingsUser === user && settingsAt && Date.now() - settingsAt < 30000) return Promise.resolve(clientSettingsCache);
+        if (settingsUser === user && settingsRequest) return settingsRequest;
+        settingsUser = user;
+        settingsAt = 0;
+        const request = fetchClientSettings().then(function (config) {
+            if (settingsUser === user && settingsRequest === request) {
+                clientSettingsCache = config || {};
+                settingsAt = Date.now();
+            }
+            return config;
+        }).finally(function () { if (settingsRequest === request) settingsRequest = null; });
+        settingsRequest = request;
+        return request;
+    }
+
+    function fetchClientSettings() {
         return ApiClient.ajax({
             url: ApiClient.getUrl('JellySeerr/client-settings'),
             type: 'GET',
             dataType: 'json'
         }).then(function (config) {
-            clientSettingsCache = config || {};
-            return clientSettingsCache;
+            return config || {};
         }).catch(function (err) {
             log.warn('client settings fetch failed. falling back to plugin config', err);
             return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
-                clientSettingsCache = {
+                return {
                     tmdbApiKey: (config && (config.TmdbApiKey || config.tmdbApiKey)) || '',
                     canOpenLocalServices: false,
                     jellyseerrBrowseUrl: '',
@@ -1057,37 +1090,22 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     sonarrUrl: '',
                     showQuotaWarnings: !config || (config.ShowQuotaWarnings !== false && config.showQuotaWarnings !== false)
                 };
-                return clientSettingsCache;
             }).catch(function (configErr) {
                 log.warn('plugin config fetch failed', configErr);
-                clientSettingsCache = {};
                 return {};
             });
         });
     }
 
     function loadModalDetails(mediaId, mediaType) {
-        return loadClientSettings().then(function (config) {
-                const apiKey = getTmdbApiKey(config);
-                const jellyseerrPromise = fetchJellyseerrDetails(mediaId, mediaType);
-
-                if (!apiKey) {
-                    return jellyseerrPromise;
-                }
-
-                // Fetch both sources but prefer TMDB content with Seerr status
-                return Promise.all([
-                    jellyseerrPromise,
-                    fetchTmdbDetailsFromBrowser(mediaId, mediaType, apiKey)
-                ]).then(function (results) {
-                    const jellyseerr = results[0];
-                    const tmdb = results[1];
-                    if (tmdb) {
-                        return mergeJellyseerrOverlay(tmdb, jellyseerr);
-                    }
-                    return jellyseerr;
-                });
-            });
+        const jellyseerrPromise = fetchJellyseerrDetails(mediaId, mediaType);
+        const tmdbPromise = loadClientSettings().then(function (config) {
+            const apiKey = getTmdbApiKey(config);
+            return apiKey ? fetchTmdbDetailsFromBrowser(mediaId, mediaType, apiKey) : null;
+        });
+        return Promise.all([jellyseerrPromise, tmdbPromise]).then(function (results) {
+            return results[1] ? mergeJellyseerrOverlay(results[1], results[0]) : results[0];
+        });
     }
 
     function formatRuntime(minutes) {
@@ -1204,6 +1222,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function closeDetailsModal() {
+        ++detailsGeneration;
         if (activeReleaseDialog) activeReleaseDialog.close();
         pendingRequestContext = null;
         closeQualityModal();
@@ -2510,6 +2529,24 @@ window.jellySeerrLog = window.jellySeerrLog || {
     function buildDetailsDom(data, mediaId, mediaType) {
         const root = mountFromHtml(renderDetails(data, mediaId, mediaType));
         bindDetailsModal(root, data, mediaId, mediaType);
+        if (data._artworkPromise) data._artworkPromise.then(function (artwork) {
+            if (!root.isConnected) return;
+            const logo = artwork[0];
+            const backdrop = artwork[1];
+            if (backdrop) {
+                const hero = root.querySelector('.bst-hero-backdrop');
+                const url = resolveImageUrl(backdrop.backdropUrl || backdrop.BackdropUrl || '');
+                if (hero && url) hero.style.backgroundImage = 'url(' + JSON.stringify(url) + ')';
+            }
+            const fallback = root.querySelector('.bst-hero-title-fallback');
+            if (logo && fallback && !root.querySelector('.bst-hero-logo')) {
+                const img = document.createElement('img');
+                img.className = 'bst-hero-logo';
+                img.alt = data.title || data.name || 'Title';
+                img.onload = function () { if (root.isConnected && fallback.isConnected) fallback.replaceWith(img); };
+                img.src = tmdbImage(logo, 'original');
+            }
+        }).catch(function (error) { log.warn('Optional title artwork failed', error); });
         return root;
     }
 
@@ -2527,6 +2564,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
 
     function openDetailsModal(mediaId, mediaType, context) {
         closeDetailsModal();
+        const generation = detailsGeneration;
         pendingRequestContext = context && context.requestId ? context : null;
         log.info('opening details modal for ' + mediaType + '/' + mediaId);
 
@@ -2535,6 +2573,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         document.body.style.overflow = 'hidden';
 
         loadModalDetails(mediaId, mediaType).then(function (data) {
+            if (generation !== detailsGeneration || !activeDetailsRoot) return;
             const dom = buildDetailsDom(data, mediaId, mediaType);
             activeDetailsRoot.replaceWith(dom);
             activeDetailsRoot = dom;
@@ -2553,6 +2592,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
             };
             document.addEventListener('keydown', escapeHandler);
         }).catch(function (err) {
+            if (generation !== detailsGeneration) return;
             log.error('details modal failed for ' + mediaType + '/' + mediaId, err);
             closeDetailsModal();
             Dashboard.alert('Failed to load details');

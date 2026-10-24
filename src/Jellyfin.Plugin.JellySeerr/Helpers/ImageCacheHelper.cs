@@ -25,12 +25,8 @@ public static class ImageCacheHelper
                 return sourceUrl;
             }
 
-            int cacheTimeout = config?.CacheTimeoutSeconds ?? 86400;
-
-            // Used in discovery mapping which allows cached images to be used in discovery cards
-            string? cacheKey = imageCacheService.GetOrCacheImage(sourceUrl, cacheTimeout)
-                .GetAwaiter()
-                .GetResult();
+            // Register the URL now; fetching belongs to the image endpoint, not card mapping.
+            string? cacheKey = imageCacheService.RegisterImage(sourceUrl);
 
             if (!string.IsNullOrEmpty(cacheKey))
             {

@@ -211,15 +211,19 @@ public class JellySeerrController : ControllerBase
     }
 
     [HttpGet("CachedImage/{cacheKey}")]
-    public ActionResult GetCachedImage(string cacheKey)
+    public async Task<ActionResult> GetCachedImage(string cacheKey, CancellationToken cancellationToken)
     {
-        CachedImageFile? file = _imageCacheService.GetCachedImageFile(cacheKey);
+        CachedImageFile? file = await _imageCacheService.GetCachedImageFileAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         if (file == null)
         {
+            string? source = _imageCacheService.GetRegisteredSource(cacheKey);
+            if (!string.IsNullOrEmpty(source) && AdvancedSettingsHelper.Resolve(JellySeerrPlugin.Instance.Configuration).Tmdb.FallbackToOriginalImageUrl)
+                return Redirect(source);
             return NotFound();
         }
 
-        return PhysicalFile(file.FilePath, file.ContentType);
+        Response.Headers.CacheControl = $"public, max-age={file.MaxAgeSeconds}";
+        return PhysicalFile(file.FilePath, file.ContentType, new DateTimeOffset(file.LastModified), new Microsoft.Net.Http.Headers.EntityTagHeaderValue(file.ETag));
     }
 
     [HttpPost("backdrops")]

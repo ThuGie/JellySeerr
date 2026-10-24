@@ -6,6 +6,8 @@ namespace Jellyfin.Plugin.JellySeerr.Helpers;
 public static class JsonMemoryCache
 {
     private static readonly ConcurrentDictionary<string, Entry> Store = new(StringComparer.Ordinal);
+    private static int _writes;
+    private static readonly object PruneLock = new();
 
     public static bool TryGet(string key, out JToken? value)
     {
@@ -21,7 +23,8 @@ public static class JsonMemoryCache
             return false;
         }
 
-        value = ((JToken)entry.Value).DeepClone();
+        if (entry.Value is not JToken token) return false;
+        value = token.DeepClone();
         return true;
     }
 
@@ -56,6 +59,7 @@ public static class JsonMemoryCache
         }
 
         Store[key] = new Entry(value.DeepClone(), DateTime.UtcNow.Add(ttl));
+        Prune();
     }
 
     public static void SetObject<T>(string key, T value, TimeSpan ttl)
@@ -67,6 +71,21 @@ public static class JsonMemoryCache
         }
 
         Store[key] = new Entry(value, DateTime.UtcNow.Add(ttl));
+        Prune();
+    }
+
+    private static void Prune()
+    {
+        if (Interlocked.Increment(ref _writes) % 64 != 0 && Store.Count < 2048) return;
+        lock (PruneLock)
+        {
+            DateTime now = DateTime.UtcNow;
+            foreach (var pair in Store.Where(p => p.Value.ExpiresAt <= now).ToArray())
+                ((ICollection<KeyValuePair<string, Entry>>)Store).Remove(pair);
+            if (Store.Count >= 2048)
+                foreach (var pair in Store.OrderBy(p => p.Value.ExpiresAt).Take(Store.Count - 1792).ToArray())
+                    ((ICollection<KeyValuePair<string, Entry>>)Store).Remove(pair);
+        }
     }
 
     public static void RemoveByPrefix(string prefix)

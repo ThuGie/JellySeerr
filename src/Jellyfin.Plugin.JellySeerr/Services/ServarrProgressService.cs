@@ -180,13 +180,13 @@ public sealed class ServarrProgressService
             return;
         }
 
-        RadarrSnapshot? radarrSnapshot = IsRadarrConfigured(config)
-            ? await LoadRadarrSnapshotAsync(config, contexts, cancellationToken).ConfigureAwait(false)
-            : null;
-
-        SonarrSnapshot? sonarrSnapshot = IsSonarrConfigured(config)
-            ? await LoadSonarrSnapshotAsync(config, contexts, cancellationToken).ConfigureAwait(false)
-            : null;
+        Task<RadarrSnapshot?> radarrTask = IsRadarrConfigured(config) && contexts.Any(c => c.Type != "tv")
+            ? LoadRadarrSnapshotAsync(config, contexts, cancellationToken) : Task.FromResult<RadarrSnapshot?>(null);
+        Task<SonarrSnapshot?> sonarrTask = IsSonarrConfigured(config) && contexts.Any(c => c.Type == "tv")
+            ? LoadSonarrSnapshotAsync(config, contexts, cancellationToken) : Task.FromResult<SonarrSnapshot?>(null);
+        await Task.WhenAll(radarrTask, sonarrTask).ConfigureAwait(false);
+        RadarrSnapshot? radarrSnapshot = await radarrTask.ConfigureAwait(false);
+        SonarrSnapshot? sonarrSnapshot = await sonarrTask.ConfigureAwait(false);
 
         foreach (ServarrRequestContext context in contexts)
         {
@@ -325,32 +325,19 @@ public sealed class ServarrProgressService
                     .ConfigureAwait(false);
                 if (seriesList != null)
                 {
-                    foreach (JObject series in seriesList.OfType<JObject>())
+                    var loaded = await BoundedAsync.SelectAsync(seriesList.OfType<JObject>()
+                        .Where(s => s.Value<int?>("tmdbId") is int id && tmdbIds.Contains(id) && s.Value<int?>("id").HasValue), 4,
+                        async series =>
+                        {
+                            int id = series.Value<int>("id");
+                            JArray? episodes = await GetCachedJsonArrayAsync(client, $"servarr:sonarr:episodes:{id}",
+                                $"episode?seriesId={id}&includeEpisodeFile=true", LibraryCacheTtl(), cancellationToken).ConfigureAwait(false);
+                            return (Series: series, Episodes: episodes);
+                        }, cancellationToken).ConfigureAwait(false);
+                    foreach (var item in loaded)
                     {
-                        int? tmdbId = series.Value<int?>("tmdbId");
-                        if (!tmdbId.HasValue || !tmdbIds.Contains(tmdbId.Value))
-                        {
-                            continue;
-                        }
-
-                        seriesByTmdbId[tmdbId.Value] = series;
-                        int? seriesId = series.Value<int?>("id");
-                        if (!seriesId.HasValue)
-                        {
-                            continue;
-                        }
-
-                        JArray? episodes = await GetCachedJsonArrayAsync(
-                                client,
-                                $"servarr:sonarr:episodes:{seriesId.Value}",
-                                $"episode?seriesId={seriesId.Value}&includeEpisodeFile=true",
-                                LibraryCacheTtl(),
-                                cancellationToken)
-                            .ConfigureAwait(false);
-                        if (episodes != null)
-                        {
-                            episodesBySeriesId[seriesId.Value] = episodes.OfType<JObject>().ToList();
-                        }
+                        seriesByTmdbId[item.Series.Value<int>("tmdbId")] = item.Series;
+                        if (item.Episodes != null) episodesBySeriesId[item.Series.Value<int>("id")] = item.Episodes.OfType<JObject>().ToList();
                     }
                 }
 
@@ -943,7 +930,7 @@ public sealed class ServarrProgressService
     private static HttpClient CreateClient(string baseUrl, string apiKey)
     {
         string normalized = baseUrl.Trim().TrimEnd('/');
-        HttpClient client = new() { BaseAddress = new Uri(normalized + "/api/v3/") };
+        HttpClient client = PooledHttpClients.Create(new Uri(normalized + "/api/v3/"));
         client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
         return client;
     }
@@ -1073,6 +1060,7 @@ public sealed class ServarrProgressService
         TimeSpan ttl,
         CancellationToken cancellationToken)
     {
+        cacheKey += ":" + ApiCacheScope.ForClient(client);
         if (ttl > TimeSpan.Zero && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JArray array)
         {
             return array;
@@ -1090,6 +1078,7 @@ public sealed class ServarrProgressService
     private async Task<List<JObject>> FetchAllQueueRecordsCachedAsync(HttpClient client, bool includeMovie, CancellationToken cancellationToken)
     {
         string cacheKey = includeMovie ? "servarr:radarr:queue" : "servarr:sonarr:queue";
+        cacheKey += ":" + ApiCacheScope.ForClient(client);
         TimeSpan ttl = QueueCacheTtl();
         if (ttl > TimeSpan.Zero && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JArray array)
         {

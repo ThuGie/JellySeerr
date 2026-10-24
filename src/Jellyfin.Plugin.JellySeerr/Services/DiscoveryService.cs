@@ -13,6 +13,7 @@ namespace Jellyfin.Plugin.JellySeerr.Services;
 
 public class DiscoveryService
 {
+    private static readonly SingleFlight<int?> UserLookups = new();
     private readonly ImageCacheService _imageCacheService;
     private readonly ILogger<DiscoveryService> _logger;
 
@@ -70,7 +71,7 @@ public class DiscoveryService
                 path += $"&language={Uri.EscapeDataString(language.Trim())}";
             }
 
-            HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
+            using HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
                 return EmptyResult();
@@ -189,7 +190,7 @@ public class DiscoveryService
                     string path = jellyseerrPath.Contains('?', StringComparison.Ordinal)
                         ? $"{jellyseerrPath}&page={jellyseerrPage}"
                         : $"{jellyseerrPath}?page={jellyseerrPage}";
-                    json = FetchCachedSeerrPage(client, path, $"discover:{username}:{path}");
+                    json = FetchCachedSeerrPage(client, path, $"discover:{ApiCacheScope.ForClient(client)}:{path}");
                     if (json == null)
                     {
                         break;
@@ -466,7 +467,7 @@ public class DiscoveryService
 
         try
         {
-            HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
+            using HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
                 return null;
@@ -502,7 +503,7 @@ public class DiscoveryService
 
         try
         {
-            HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
+            using HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("JS • Seerr request failed for {Path} with status {StatusCode}", path, response.StatusCode);
@@ -657,7 +658,7 @@ public class DiscoveryService
 
     private static HttpClient CreateClient(PluginConfiguration config)
     {
-        HttpClient client = new() { BaseAddress = new Uri(config.JellyseerrUrl!) };
+        HttpClient client = PooledHttpClients.Create(new Uri(config.JellyseerrUrl!));
         client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
         return client;
     }
@@ -665,12 +666,19 @@ public class DiscoveryService
     // Match Jellyfin username to linked Seerr user for per-user X-Api-User header.
     private static int? ResolveJellyseerrUserId(HttpClient client, string username)
     {
-        HttpResponseMessage usersResponse = client.GetAsync($"/api/v1/user?q={Uri.EscapeDataString(username)}").GetAwaiter().GetResult();
-        string userResponseRaw = usersResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-        return JObject.Parse(userResponseRaw).Value<JArray>("results")?
-            .OfType<JObject>()
-            .FirstOrDefault(x => string.Equals(x.Value<string>("jellyfinUsername"), username, StringComparison.OrdinalIgnoreCase))
-            ?.Value<int>("id");
+        string key = $"discover-user:{ApiCacheScope.ForClient(client)}:{username.ToUpperInvariant()}";
+        if (JsonMemoryCache.TryGet(key, out JToken? cached)) return cached?.Value<int?>();
+        return UserLookups.RunAsync(key, async () =>
+        {
+            if (JsonMemoryCache.TryGet(key, out JToken? ready)) return ready?.Value<int?>();
+            using HttpResponseMessage response = await client.GetAsync($"/api/v1/user?q={Uri.EscapeDataString(username)}").ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+            string raw = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            int? id = JObject.Parse(raw).Value<JArray>("results")?.OfType<JObject>()
+                .FirstOrDefault(x => string.Equals(x.Value<string>("jellyfinUsername"), username, StringComparison.OrdinalIgnoreCase))?.Value<int>("id");
+            if (id.HasValue) JsonMemoryCache.Set(key, new JValue(id.Value), TimeSpan.FromMinutes(5));
+            return id;
+        }).GetAwaiter().GetResult();
     }
 
     private static bool IsAvailableInLibrary(JObject item)
@@ -845,7 +853,8 @@ public class DiscoveryService
             + page.ToString(CultureInfo.InvariantCulture);
 
         using HttpRequestMessage request = CreateTmdbRequest(url, apiKey);
-        using HttpResponseMessage response = new HttpClient().SendAsync(request).GetAwaiter().GetResult();
+        using HttpClient tmdbClient = PooledHttpClients.Create();
+        using HttpResponseMessage response = tmdbClient.SendAsync(request).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("JS • TMDB trending request failed with status {StatusCode} for {Url}", (int)response.StatusCode, url);
@@ -889,7 +898,8 @@ public class DiscoveryService
             string url = "https://api.themoviedb.org/3/movie/" + movieId.ToString(CultureInfo.InvariantCulture) + "/release_dates";
 
             using HttpRequestMessage request = CreateTmdbRequest(url, apiKey);
-            using HttpResponseMessage response = new HttpClient().SendAsync(request).GetAwaiter().GetResult();
+            using HttpClient tmdbClient = PooledHttpClients.Create();
+            using HttpResponseMessage response = tmdbClient.SendAsync(request).GetAwaiter().GetResult();
             if (response.IsSuccessStatusCode)
             {
                 string jsonRaw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -944,7 +954,8 @@ public class DiscoveryService
     private JObject? FetchTmdbDiscoverJson(string url, string apiKey)
     {
         using HttpRequestMessage request = CreateTmdbRequest(url, apiKey);
-        using HttpResponseMessage response = new HttpClient().SendAsync(request).GetAwaiter().GetResult();
+        using HttpClient tmdbClient = PooledHttpClients.Create();
+        using HttpResponseMessage response = tmdbClient.SendAsync(request).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("JS • TMDB discover request failed with status {StatusCode} for {Url}", (int)response.StatusCode, url);
@@ -1042,7 +1053,7 @@ public class DiscoveryService
             return cachedPage;
         }
 
-        HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
+        using HttpResponseMessage response = client.GetAsync(path).GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
             return null;

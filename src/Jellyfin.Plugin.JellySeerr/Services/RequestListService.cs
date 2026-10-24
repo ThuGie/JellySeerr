@@ -14,8 +14,8 @@ namespace Jellyfin.Plugin.JellySeerr.Services;
 
 public class RequestListService
 {
-    private static readonly ConcurrentDictionary<string, (JObject Data, DateTime CachedAt)> MediaDetailCache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly ConcurrentDictionary<string, Task<JObject?>> MediaDetailInFlight = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly SingleFlight<JObject?> MediaDetailInFlight = new();
+    private static readonly SemaphoreSlim DetailConcurrency = new(6);
     private static readonly TimeSpan MediaDetailCacheTtl = TimeSpan.FromMinutes(10);
 
     private readonly ILogger<RequestListService> _logger;
@@ -92,7 +92,7 @@ public class RequestListService
         string apiPath = $"/api/v1/request?take={take}&skip={skip}&sort=added&sortDirection=desc{filterParam}{mineParam}";
         try
         {
-            string cacheKey = $"requests:{jellyseerrUserId}:{allRequests}:{filter}:{take}:{skip}";
+            string cacheKey = $"requests:{ApiCacheScope.ForClient(client)}:{allRequests}:{filter}:{take}:{skip}";
             int cacheSeconds = Math.Clamp(config.RequestsCacheSeconds, 0, 300);
             JObject data;
             if (cacheSeconds > 0 && JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JObject cachedData)
@@ -220,7 +220,7 @@ public class RequestListService
             return (null, null);
         }
 
-        using HttpClient client = new() { BaseAddress = new Uri(config.JellyseerrUrl!) };
+        using HttpClient client = PooledHttpClients.Create(new Uri(config.JellyseerrUrl!));
         client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
 
         try
@@ -268,28 +268,27 @@ public class RequestListService
             return null;
         }
 
-        string cacheKey = $"{type}:{tmdbId.Value}";
-        if (MediaDetailCache.TryGetValue(cacheKey, out (JObject Data, DateTime CachedAt) cached) && DateTime.UtcNow - cached.CachedAt < MediaDetailCacheTtl)
+        string cacheKey = $"request-details:{ApiCacheScope.ForClient(client)}:{type}:{tmdbId.Value}";
+        if (JsonMemoryCache.TryGet(cacheKey, out JToken? cached) && cached is JObject cachedDetails)
         {
-            return cached.Data;
+            return cachedDetails;
         }
-
-        Task<JObject?> fetchTask = MediaDetailInFlight.GetOrAdd(cacheKey, _ => FetchMediaDetailsAsync(client, type, tmdbId.Value, cancellationToken));
-        try
+        JObject? result = await MediaDetailInFlight.RunAsync(cacheKey, async () =>
         {
-            JObject? details = await fetchTask.ConfigureAwait(false);
-            if (details != null)
+            await DetailConcurrency.WaitAsync().ConfigureAwait(false);
+            try
             {
-                MediaDetailCache[cacheKey] = (details, DateTime.UtcNow);
-                PruneMediaDetailCache();
+                if (JsonMemoryCache.TryGet(cacheKey, out JToken? ready) && ready is JObject readyDetails) return readyDetails;
+                // The shared lookup outlives any one HTTP caller. Own its client and cancellation.
+                using HttpClient lookup = PooledHttpClients.Create(client.BaseAddress);
+                foreach (var header in client.DefaultRequestHeaders) lookup.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
+                JObject? details = await FetchMediaDetailsAsync(lookup, type, tmdbId.Value, CancellationToken.None).ConfigureAwait(false);
+                if (details != null) JsonMemoryCache.Set(cacheKey, details, MediaDetailCacheTtl);
+                return details;
             }
-
-            return details;
-        }
-        finally
-        {
-            MediaDetailInFlight.TryRemove(cacheKey, out _);
-        }
+            finally { DetailConcurrency.Release(); }
+        }, cancellationToken).ConfigureAwait(false);
+        return result == null ? null : (JObject)result.DeepClone();
     }
 
     private static async Task<JObject?> FetchMediaDetailsAsync(HttpClient client, string type, int tmdbId, CancellationToken cancellationToken)
@@ -313,22 +312,6 @@ public class RequestListService
         {
             // Fallback to request media fields when detail lookup fails.
             return null;
-        }
-    }
-
-    private static void PruneMediaDetailCache()
-    {
-        if (MediaDetailCache.Count <= 500 && MediaDetailCache.Count % 100 != 0)
-        {
-            return;
-        }
-
-        foreach (KeyValuePair<string, (JObject Data, DateTime CachedAt)> entry in MediaDetailCache)
-        {
-            if (DateTime.UtcNow - entry.Value.CachedAt > MediaDetailCacheTtl)
-            {
-                MediaDetailCache.TryRemove(entry.Key, out _);
-            }
         }
     }
 
@@ -540,7 +523,7 @@ public class RequestListService
 
     private static HttpClient CreateClient(PluginConfiguration config)
     {
-        HttpClient client = new() { BaseAddress = new Uri(config.JellyseerrUrl!) };
+        HttpClient client = PooledHttpClients.Create(new Uri(config.JellyseerrUrl!));
         client.DefaultRequestHeaders.Add("X-Api-Key", config.JellyseerrApiKey);
         return client;
     }

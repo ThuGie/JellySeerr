@@ -3,31 +3,50 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Jellyfin.Plugin.JellySeerr.Configuration;
+using Jellyfin.Plugin.JellySeerr.Helpers;
 using Jellyfin.Plugin.JellySeerr.Model;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellySeerr.Services;
 
-public class ImageCacheService
+public class ImageCacheService : IDisposable
 {
     private readonly ILogger<ImageCacheService> _logger;
     private readonly HttpClient _httpClient;
     private readonly string _cacheDirectory;
     private readonly ConcurrentDictionary<string, CachedImageDto> _imageCache = new();
-    private readonly ConcurrentDictionary<string, Task<string?>> _inflightDownloads = new();
+    private readonly SingleFlight<string?> _inflightDownloads = new();
+    private readonly Func<PluginConfiguration> _configuration;
+    private readonly object _indexLock = new();
+    private readonly Timer _indexFlush;
+    private readonly SemaphoreSlim _downloadSlots = new(6);
 
     public ImageCacheService(
         ILogger<ImageCacheService> logger,
         IApplicationPaths applicationPaths,
-        HttpClient httpClient)
+        HttpClient httpClient,
+        Func<PluginConfiguration>? configuration = null)
     {
         _logger = logger;
         _httpClient = httpClient;
+        _configuration = configuration ?? (() => JellySeerrPlugin.Instance.Configuration);
         _cacheDirectory = Path.Combine(applicationPaths.CachePath, "JellySeerr", "Images");
         Directory.CreateDirectory(_cacheDirectory);
         LoadCacheIndex();
+        _indexFlush = new Timer(_ => SaveCacheIndex(), null, Timeout.Infinite, Timeout.Infinite);
     }
+
+    // Card mapping does no network I/O. Images download only when the browser requests them.
+    public string RegisterImage(string sourceUrl)
+    {
+        string key = GenerateCacheKey(sourceUrl);
+        if (_imageCache.Count >= Math.Max(1, _configuration().MaxImageCacheEntries) && !_imageCache.ContainsKey(key)) EvictOldEntries();
+        _imageCache.TryAdd(key, new CachedImageDto { CacheKey = key, SourceUrl = sourceUrl, CachedAt = DateTime.UtcNow });
+        return key;
+    }
+
+    public string? GetRegisteredSource(string key) => _imageCache.TryGetValue(key, out var entry) ? entry.SourceUrl : null;
 
     public async Task<string?> GetOrCacheImage(string sourceUrl, int cacheTimeoutSeconds)
     {
@@ -43,16 +62,10 @@ public class ImageCacheService
             return cacheKey;
         }
 
-        // Index hit but file missing or expired. Remove stale entry before re-downloading
-        if (_imageCache.ContainsKey(cacheKey))
-        {
-            CleanupCacheEntry(cacheKey);
-        }
-
         return await GetOrStartDownload(sourceUrl, cacheKey, cacheTimeoutSeconds).ConfigureAwait(false);
     }
 
-    public CachedImageFile? GetCachedImageFile(string cacheKey)
+    public async Task<CachedImageFile?> GetCachedImageFileAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         if (!_imageCache.TryGetValue(cacheKey, out CachedImageDto? cachedInfo))
         {
@@ -66,8 +79,8 @@ public class ImageCacheService
 
         if (!string.IsNullOrEmpty(cachedInfo.SourceUrl))
         {
-            int cacheTimeout = JellySeerrPlugin.Instance.Configuration.CacheTimeoutSeconds;
-            string? refreshedKey = GetOrCacheImage(cachedInfo.SourceUrl, cacheTimeout).GetAwaiter().GetResult();
+            int cacheTimeout = _configuration().CacheTimeoutSeconds;
+            string? refreshedKey = await GetOrCacheImage(cachedInfo.SourceUrl, cacheTimeout).WaitAsync(cancellationToken).ConfigureAwait(false);
             if (refreshedKey == cacheKey
                 && _imageCache.TryGetValue(cacheKey, out cachedInfo)
                 && File.Exists(cachedInfo.FilePath))
@@ -76,24 +89,19 @@ public class ImageCacheService
             }
         }
 
-        _imageCache.TryRemove(cacheKey, out _);
+        if (cachedInfo != null && File.Exists(cachedInfo.FilePath)) return BuildCachedImageFile(cachedInfo);
         return null;
     }
 
     private async Task<string?> GetOrStartDownload(string sourceUrl, string cacheKey, int cacheTimeoutSeconds)
     {
-        Task<string?> downloadTask = _inflightDownloads.GetOrAdd(
-            cacheKey,
-            _ => DownloadAndCacheImage(sourceUrl, cacheKey, cacheTimeoutSeconds));
-
-        try
+        return await _inflightDownloads.RunAsync(cacheKey, async () =>
         {
-            return await downloadTask.ConfigureAwait(false);
-        }
-        finally
-        {
-            _inflightDownloads.TryRemove(cacheKey, out _);
-        }
+            if (IsValidCacheKey(cacheKey)) return cacheKey;
+            await _downloadSlots.WaitAsync().ConfigureAwait(false);
+            try { return await DownloadAndCacheImage(sourceUrl, cacheKey, cacheTimeoutSeconds).ConfigureAwait(false); }
+            finally { _downloadSlots.Release(); }
+        }).ConfigureAwait(false);
     }
 
     private bool IsValidCacheKey(string cacheKey)
@@ -112,8 +120,8 @@ public class ImageCacheService
                 return cacheKey;
             }
 
-            PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
-            if (_imageCache.Count >= config.MaxImageCacheEntries)
+            PluginConfiguration config = _configuration();
+            if (_imageCache.Count >= config.MaxImageCacheEntries && !_imageCache.ContainsKey(cacheKey))
             {
                 EvictOldEntries();
             }
@@ -128,7 +136,8 @@ public class ImageCacheService
             string contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
             string extension = GetExtensionFromContentType(contentType);
             string filePath = Path.Combine(_cacheDirectory, $"{cacheKey}{extension}");
-            await File.WriteAllBytesAsync(filePath, imageData).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(filePath + ".tmp", imageData).ConfigureAwait(false);
+            File.Move(filePath + ".tmp", filePath, overwrite: true);
 
             DateTime cachedAt = DateTime.UtcNow;
             _imageCache[cacheKey] = new CachedImageDto
@@ -140,12 +149,12 @@ public class ImageCacheService
                 CachedAt = cachedAt,
                 ExpiresAt = cachedAt.AddSeconds(cacheTimeoutSeconds)
             };
-            SaveCacheIndex();
+            _indexFlush.Change(250, Timeout.Infinite);
             return cacheKey;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "JS • error caching image from {SourceUrl}", sourceUrl);
+            _logger.LogError(ex, "JS â€¢ error caching image from {SourceUrl}", sourceUrl);
             return null;
         }
     }
@@ -159,7 +168,7 @@ public class ImageCacheService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "JS • failed to read last write time for {FilePath}", cachedInfo.FilePath);
+            _logger.LogDebug(ex, "JS â€¢ failed to read last write time for {FilePath}", cachedInfo.FilePath);
         }
 
         int maxAgeSeconds = Math.Max(0, (int)Math.Ceiling((cachedInfo.ExpiresAt - DateTime.UtcNow).TotalSeconds));
@@ -170,7 +179,7 @@ public class ImageCacheService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "JS • failed to read file length for {FilePath}", cachedInfo.FilePath);
+            _logger.LogDebug(ex, "JS â€¢ failed to read file length for {FilePath}", cachedInfo.FilePath);
         }
 
         return new CachedImageFile
@@ -198,14 +207,14 @@ public class ImageCacheService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "JS • failed to delete cache file {FilePath}", cachedInfo.FilePath);
+                _logger.LogWarning(ex, "JS â€¢ failed to delete cache file {FilePath}", cachedInfo.FilePath);
             }
         }
     }
 
     private void EvictOldEntries()
     {
-        int maxEntries = JellySeerrPlugin.Instance.Configuration.MaxImageCacheEntries;
+        int maxEntries = _configuration().MaxImageCacheEntries;
         foreach (string key in _imageCache.Values
                      .OrderBy(x => x.CachedAt)
                      .Take(Math.Max(1, maxEntries / 10))
@@ -214,7 +223,7 @@ public class ImageCacheService
             CleanupCacheEntry(key);
         }
 
-        SaveCacheIndex();
+        _indexFlush.Change(250, Timeout.Infinite);
     }
 
     private void LoadCacheIndex()
@@ -243,7 +252,7 @@ public class ImageCacheService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "JS • error loading cache index");
+            _logger.LogError(ex, "JS â€¢ error loading cache index");
         }
     }
 
@@ -251,14 +260,24 @@ public class ImageCacheService
     {
         try
         {
-            string indexPath = Path.Combine(_cacheDirectory, "cache-index.json");
-            string json = JsonSerializer.Serialize(_imageCache.Values.ToArray(), new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(indexPath, json);
+            lock (_indexLock)
+            {
+                string indexPath = Path.Combine(_cacheDirectory, "cache-index.json");
+                string json = JsonSerializer.Serialize(_imageCache.Values.Where(e => !string.IsNullOrEmpty(e.FilePath)).ToArray());
+                File.WriteAllText(indexPath + ".tmp", json);
+                File.Move(indexPath + ".tmp", indexPath, overwrite: true);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "JS • error saving cache index");
+            _logger.LogError(ex, "JS â€¢ error saving cache index");
         }
+    }
+
+    public void Dispose()
+    {
+        _indexFlush.Dispose();
+        SaveCacheIndex();
     }
 
     private static string GenerateCacheKey(string sourceUrl)

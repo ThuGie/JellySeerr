@@ -171,15 +171,15 @@ public partial class ServarrReleaseService
     {
         if (!context.IsTv || season < 0) throw new ReleaseSelectionException(400, "Choose a TV season.");
         JObject title = await FindTitle(client, context, ct);
-        JArray approved = await Episodes(client, context, title, ct);
+        JArray all = (JArray)await Read(client, $"episode?seriesId={title.Value<int>("id")}", ct);
+        JArray approved = await Episodes(client, context, title, ct, all);
         JArray episodes = new(approved.OfType<JObject>().Where(e => e.Value<int>("seasonNumber") == season));
         if (episodes.Count == 0) throw new ReleaseSelectionException(403, "Select an approved season from this request.");
         HashSet<int> fileIds = episodes.OfType<JObject>().Select(e => e.Value<int>("episodeFileId")).Where(id => id > 0).ToHashSet();
-        JArray all = (JArray)await Read(client, $"episode?seriesId={title.Value<int>("id")}", ct);
         if (all.OfType<JObject>().Any(e => fileIds.Contains(e.Value<int>("episodeFileId")) && e.Value<int>("seasonNumber") != season))
             throw new ReleaseSelectionException(409, "A file is shared with another season. Replace that file through Sonarr.");
-        JArray files = [];
-        foreach (int id in fileIds.Order()) files.Add(await Read(client, $"episodefile/{id}", ct));
+        JArray files = new(await BoundedAsync.SelectAsync(fileIds.Order(), 4,
+            id => Read(client, $"episodefile/{id}", ct), ct));
         JArray history = files.Count == 0 ? [] : (JArray)await Read(client, $"history/series?seriesId={title.Value<int>("id")}&seasonNumber={season}", ct);
         return new SeasonState(title, episodes, files, history);
     }
