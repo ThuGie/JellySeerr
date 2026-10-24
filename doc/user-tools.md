@@ -2,13 +2,13 @@
 
 Restart Jellyfin after installing the update, then reload the browser.
 
-## Release calendar
+## Release calendar (updated in 1.0.23.0)
 
-Open **Requests → Release calendar**. Browse months, filter movies/series or search titles, and click a title for details. This is a personal calendar for pending, approved and completed requests, including episodes in requested seasons.
+Click the **calendar icon in Jellyfin's top header**, the **Release calendar** home tab, or **Requests → Release calendar**. They open the same dedicated page. It shows all monitored series/episodes from connected Sonarr instances, regardless of who requested them. Switch between a month grid and an agenda, filter by series/episode or instance, and optionally hide episodes already available. Phones start in agenda view.
 
-Episode air dates and movie release dates come from Seerr/TMDB. Digital and physical dates use the US market when present, falling back to the first supplied market; the market is displayed. Dates are estimates, not promises of download availability. Entries retain their published calendar day. Available/requested is the title's Seerr status; individual episodes can differ.
+Air times come from Sonarr and are shown in your browser's local time zone. Continuing/upcoming monitored series with no known next air date appear under **Awaiting an air date**. Ended series and series with monitoring disabled do not appear in that list. Air dates are estimates, not promises of download availability. See the [calendar guide](monitored-calendar.md) for scope and permissions.
 
-Ranges are limited to 42 days and the first 1000 requests. The interface reports incomplete lookups and truncation. Metadata requests run four at a time, metadata is cached for 15 minutes, and each user's month is cached for one minute. Nothing loads until the calendar is opened.
+The page reads Sonarr's calendar directly; there is no request-count limit or scan of every requested season. Results are cached for one minute, concurrent identical lookups are shared, and instance failures are shown without hiding successful results. Nothing loads until the calendar page is opened. The older personal Seerr/TMDB calendar endpoint remains available for compatibility.
 
 ## Notification preferences
 

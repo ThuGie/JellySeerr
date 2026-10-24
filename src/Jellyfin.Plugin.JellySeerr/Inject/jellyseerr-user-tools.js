@@ -57,6 +57,7 @@
         } catch (e) { view.fail(e); }
     }
     function calendar() {
+        if (window.jellySeerrCalendar) { window.jellySeerrCalendar.open(); return; }
         const view = dialog('Release calendar'); let month = new Date(); month = new Date(month.getFullYear(), month.getMonth(), 1);
         const controls = el('div', null, view.body); controls.className = 'bst-release-controls';
         const heading = el('strong', '', controls);
@@ -113,7 +114,7 @@
                             item.seasonNumber != null ? 'Season ' + item.seasonNumber : '', item.episodeNumber != null ? 'Episode ' + item.episodeNumber : ''].filter(Boolean).join(' · '), row);
                     } else {
                         el('strong', item.title, row); el('p', item.scope, row);
-                        if (item.episodes && item.episodes.length) el('p', item.episodes.map(e => 'S' + e.seasonNumber + ' E' + e.episodeNumber + (e.title ? ' � ' + e.title : '')).join('; '), row);
+                        if (item.episodes && item.episodes.length) el('p', item.episodes.map(e => 'S' + e.seasonNumber + ' E' + e.episodeNumber + (e.title ? ' · ' + e.title : '')).join('; '), row);
                         const recover = button('Remove, blocklist & search again', row, async () => {
                             if (!window.confirm('Recover ' + item.scope + '? This removes the failed download and partial data, blocklists only its specific release, and starts a fresh search. This may affect other users. Existing library files are retained.')) return;
                             busy = true; view.busy(true); select.disabled = refresh.disabled = true;

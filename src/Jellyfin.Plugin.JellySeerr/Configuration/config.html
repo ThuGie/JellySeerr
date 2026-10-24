@@ -397,6 +397,10 @@
                     { Id: 'tv', Enabled: true, Title: 'TV Shows' },
                     { Id: 'requests', Enabled: true, Title: 'Requests' }
                 ]);
+                if (!tabs.some(function (tab) { return (tab.Id || tab.id) === 'calendar'; })) {
+                    tabs.push({ Id: 'calendar', Enabled: true, Title: 'Release calendar' });
+                }
+                config.Tabs = tabs;
                 host.innerHTML = tabs.map(function (tab, index) {
                     return '<div class="jellySeerr-tab-card">' +
                         '<label><input type="checkbox" data-tab-enabled="' + index + '" ' + (tab.Enabled !== false && tab.enabled !== false ? 'checked' : '') + '> Enabled</label>' +

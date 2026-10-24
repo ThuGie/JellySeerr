@@ -71,6 +71,8 @@ jobs:
           node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-modal.js
           node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-user-tools.js
           node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-requests.js
+          node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-calendar.js
+          node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-tabs.js
           npm ci --prefix tests/ui
           npm test --prefix tests/ui
 

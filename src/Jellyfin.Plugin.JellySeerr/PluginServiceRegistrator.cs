@@ -36,5 +36,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ReleaseActivityStore>(services => new ReleaseActivityStore(services.GetRequiredService<MediaBrowser.Common.Configuration.IApplicationPaths>(), services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ReleaseActivityStore>>()));
         serviceCollection.AddSingleton<ServarrReleaseService>();
         serviceCollection.AddSingleton<ReleaseOperationJobs>();
+        serviceCollection.AddSingleton<MonitoredCalendarService>();
     }
 }

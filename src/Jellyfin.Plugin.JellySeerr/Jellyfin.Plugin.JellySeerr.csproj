@@ -7,7 +7,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-        <Version>1.0.22.0</Version>
+        <Version>1.0.23.0</Version>
         <RootNamespace>Jellyfin.Plugin.JellySeerr</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellySeerr</AssemblyName>
     </PropertyGroup>
@@ -35,6 +35,8 @@
         <EmbeddedResource Include="Inject\jellyseerr-tabs.css" />
         <EmbeddedResource Include="Inject\jellyseerr-modal.js" />
         <EmbeddedResource Include="Inject\jellyseerr-user-tools.js" />
+        <EmbeddedResource Include="Inject\jellyseerr-calendar.js" />
+        <EmbeddedResource Include="Inject\jellyseerr-calendar.css" />
         <EmbeddedResource Include="Inject\jellyseerr-modal.css" />
         <EmbeddedResource Include="Inject\jellyseerr-requests.js" />
         <EmbeddedResource Include="Inject\jellyseerr-requests.css" />

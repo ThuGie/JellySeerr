@@ -60,7 +60,8 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         TAB_DEFS: {
             movies: { sectionClass: 'jellySeerr-movies-sections', defaultTitle: 'Movies' },
             tv: { sectionClass: 'jellySeerr-tv-sections', defaultTitle: 'TV Shows' },
-            requests: { sectionClass: 'jellySeerr-requests-sections', defaultTitle: 'Requests' }
+            requests: { sectionClass: 'jellySeerr-requests-sections', defaultTitle: 'Requests' },
+            calendar: { sectionClass: 'jellySeerr-calendar-sections', defaultTitle: 'Release calendar' }
         },
 
         CUSTOM_TABS_PLUGIN_ID: 'fbacd0b6-fd46-4a05-b0a4-2045d6a135b0',
@@ -148,6 +149,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 self._renderPending = false;
                 self.renderIfContainerVisible('movies');
                 self.renderIfContainerVisible('tv');
+                if (window.jellySeerrCalendar) window.jellySeerrCalendar.ensureMounted();
             });
         },
 
@@ -387,7 +389,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         buildModernNavSlots: function (config) {
             const self = this;
             return (config.tabs || []).filter(function (tab) {
-                return tab && tab.enabled !== false && self.TAB_DEFS[tab.id];
+                return tab && tab.enabled !== false && tab.id !== 'calendar' && self.TAB_DEFS[tab.id];
             }).map(function (tab) {
                 return {
                     id: tab.id,
@@ -424,6 +426,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     }
 
                     const index = parseInt(button.getAttribute('data-index'), 10);
+                    if (window.jellySeerrCalendar) window.jellySeerrCalendar.route(tabId === 'calendar');
                     self.updateModernNavActiveState(tabId);
 
                     if (tabs.tabsEl && typeof tabs.tabsEl.selectedIndex === 'function' && !isNaN(index)) {
@@ -466,8 +469,33 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             return activate();
         },
 
+        ensureCalendarHeaderIcon: function (config) {
+            const enabled = (config.tabs || []).some(function (tab) { return tab.id === 'calendar' && tab.enabled !== false; });
+            const existing = document.querySelector('[data-jellySeerr-calendar-nav]');
+            if (!enabled) { if (existing) existing.remove(); return; }
+            const modern = this.isExperimentalLayout() && this.findModernNavMount();
+            const legacy = document.querySelector('.skinHeader .headerRight');
+            const parent = modern && modern.parent || legacy;
+            if (!parent || !this.isElementLaidOut(parent)) return;
+            if (existing && parent.contains(existing)) return;
+            if (existing) existing.remove();
+            const icon = document.createElement('a');
+            icon.className = 'jellySeerr-calendar-header-icon';
+            icon.setAttribute('data-jellySeerr-calendar-nav', '1');
+            icon.href = this.isExperimentalLayout() ? '#/home?jellySeerrTab=calendar' : '#/home.html?jellySeerrTab=calendar';
+            icon.title = 'Release calendar'; icon.setAttribute('aria-label', 'Release calendar');
+            const glyph = document.createElement('span'); glyph.className = 'material-icons notranslate';
+            glyph.setAttribute('aria-hidden', 'true'); glyph.textContent = 'calendar_month'; icon.appendChild(glyph);
+            icon.addEventListener('click', function (event) {
+                if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                event.preventDefault(); if (window.jellySeerrCalendar) window.jellySeerrCalendar.open();
+            });
+            parent.insertBefore(icon, parent.firstChild);
+        },
+
         ensureModernTabNav: function (config) {
             const self = this;
+            self.ensureCalendarHeaderIcon(config || { tabs: self.getDefaultTabConfig() });
             if (!self.isExperimentalLayout() || self.isLegacyTabBarUsable()) {
                 self.removeModernTabNav();
                 return;
@@ -712,6 +740,8 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
 
                 const selectedButton = tabs.querySelector('.emby-tab-button[data-index="' + index + '"]');
                 const pluginTabId = selectedButton && selectedButton.getAttribute('data-jellySeerr-tab');
+                if (window.jellySeerrCalendar && (pluginTabId === 'calendar' || self._activeModernTabId === 'calendar'))
+                    window.jellySeerrCalendar.route(pluginTabId === 'calendar');
                 if (pluginTabId) {
                     self.updateModernNavActiveState(pluginTabId);
                     log.info('jellySeerr tab before change to index ' + index);

@@ -90,3 +90,4 @@ Seerr API key never leaves the server (except via authenticated seerr/{*path} pr
 ```
 
 - [User tools: calendar, notifications, issues, history, comparison and recovery](user-tools.md)
+- [Dedicated monitored release calendar](monitored-calendar.md)

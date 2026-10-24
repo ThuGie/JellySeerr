@@ -13,10 +13,12 @@ public static class TransformationPatches
             : $"?v={version}&c={config.CacheBustCounter}";
 
         string cssLinks =
+            $"<link rel=\"stylesheet\" href=\"../JellySeerr/jellyseerr-calendar.css{cacheParam}\" />" +
             $"<link rel=\"stylesheet\" href=\"../JellySeerr/jellyseerr-tabs.css{cacheParam}\" />" +
             $"<link rel=\"stylesheet\" href=\"../JellySeerr/jellyseerr-modal.css{cacheParam}\" />" +
             $"<link rel=\"stylesheet\" href=\"../JellySeerr/jellyseerr-requests.css{cacheParam}\" />";
         string scripts =
+            $"<script defer src=\"../JellySeerr/jellyseerr-calendar.js{cacheParam}\"></script>" +
             $"<script defer src=\"../JellySeerr/jellyseerr-user-tools.js{cacheParam}\"></script>" +
             $"<script defer src=\"../JellySeerr/jellyseerr-modal.js{cacheParam}\"></script>" +
             $"<script defer src=\"../JellySeerr/jellyseerr-nativeui.js{cacheParam}\"></script>" +

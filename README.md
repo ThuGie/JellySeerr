@@ -54,6 +54,8 @@ https://raw.githubusercontent.com/ThuGie/JellySeerr/main/manifest.json
 
 ## What users see
 
+- **Release calendar** — click the small calendar icon in the top header or the Release calendar tab for a full page of monitored Sonarr episodes. Includes month/agenda views, local air times, instance/title filters, and series awaiting an air date. It includes other users' monitored titles. [Calendar guide](doc/monitored-calendar.md).
+
 The [user tools guide](doc/user-tools.md) covers the release calendar, personal notification preferences, categorized issue reporting and comments, replacement history, release comparison, and failed/stalled download recovery. Calendar and Notifications are in Requests; the other tools are in title details and Advanced download.
 
 - **Movies / TV** — trending, popular, genres, studios, networks, streaming services.

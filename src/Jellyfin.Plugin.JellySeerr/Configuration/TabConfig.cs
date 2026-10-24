@@ -12,6 +12,7 @@ public class TabConfig
     [
         new() { Id = "movies", Title = "Movies" },
         new() { Id = "tv", Title = "TV Shows" },
-        new() { Id = "requests", Title = "Requests" }
+        new() { Id = "requests", Title = "Requests" },
+        new() { Id = "calendar", Title = "Release calendar" }
     ];
 }
