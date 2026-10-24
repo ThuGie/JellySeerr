@@ -2013,26 +2013,30 @@ window.jellySeerrLog = window.jellySeerrLog || {
     function openReleasePicker(data, mediaType) {
         if (activeReleaseDialog) activeReleaseDialog.close();
         const requests = getRequestRecords(data).filter(function (req) {
-            return [2, 5].indexOf(requestStatusOf(req)) !== -1 && canModifyRequest(req);
+            return [2, 5].indexOf(requestStatusOf(req)) !== -1 && (mediaType === 'tv' || canModifyRequest(req));
         });
         const dialog = document.createElement('dialog');
         dialog.className = 'bst-release-dialog';
         dialog.setAttribute('aria-labelledby', 'bst-release-heading');
         dialog.innerHTML = '<div class="bst-release-header"><h2 id="bst-release-heading">Advanced download</h2>'
             + '<button type="button" class="bst-btn-ghost" data-close aria-label="Close advanced download">Close</button></div>'
-            + '<p>Choose a release for your approved request. Replacing a file affects everyone who watches it.</p>'
+            + '<p>Choose a release for an approved request. Whole seasons can also be replaced when another user requested them. Replacement affects everyone who watches it.</p>'
             + '<div class="bst-release-controls"><label>Request <select data-request></select></label>'
+            + '<label data-mode-label hidden>Download <select data-mode><option value="episode">Single episode</option><option value="season">Replace whole season</option></select></label>'
             + '<label data-episode-label hidden>Episode <select data-episode></select></label>'
+            + '<label data-season-label hidden>Season <select data-season></select></label>'
             + '<button type="button" class="bst-btn-request" data-search>Search releases</button></div>'
             + '<div class="bst-release-controls"><label>Filter <input data-filter type="search" placeholder="Release, quality or indexer" /></label>'
             + '<label><input data-show-rejected type="checkbox" /> Show unavailable releases</label></div>'
-            + '<div data-current hidden><p data-current-name></p><label><input data-reject type="checkbox" /> '
-            + 'Mark the current release as bad so it is skipped next time (only this release).</label><p data-current-help></p></div>'
+            + '<div data-current hidden><p data-current-name></p><p data-affected></p><label><input data-reject type="checkbox" /> '
+            + '<span data-reject-label>Mark the current release as bad so it is skipped next time (only this release).</span></label><p data-current-help></p></div>'
             + '<p data-message role="status" aria-live="polite"></p><div data-results class="bst-release-results"></div>';
         document.body.appendChild(dialog);
         activeReleaseDialog = dialog;
         const requestSelect = dialog.querySelector('[data-request]');
         const episodeSelect = dialog.querySelector('[data-episode]');
+        const modeSelect = dialog.querySelector('[data-mode]');
+        const seasonSelect = dialog.querySelector('[data-season]');
         const searchButton = dialog.querySelector('[data-search]');
         const message = dialog.querySelector('[data-message]');
         const results = dialog.querySelector('[data-results]');
@@ -2041,6 +2045,16 @@ window.jellySeerrLog = window.jellySeerrLog || {
         let loading = false;
         let generation = 0;
         let busy = false;
+        function setControlsDisabled(value) {
+            requestSelect.disabled = episodeSelect.disabled = seasonSelect.disabled = modeSelect.disabled = searchButton.disabled = value;
+        }
+        function updateScope() {
+            const season = mediaType === 'tv' && modeSelect.value === 'season';
+            dialog.querySelector('[data-mode-label]').hidden = mediaType !== 'tv';
+            dialog.querySelector('[data-episode-label]').hidden = mediaType !== 'tv' || season;
+            dialog.querySelector('[data-season-label]').hidden = !season;
+            searchButton.disabled = mediaType === 'tv' && !(season ? seasonSelect : episodeSelect).options.length;
+        }
         function errorText(error) {
             try {
                 const body = error && (error.responseJSON || JSON.parse(error.responseText || '{}'));
@@ -2084,20 +2098,29 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 const choose = document.createElement('button');
                 choose.type = 'button';
                 choose.className = 'bst-btn-request';
-                choose.textContent = r.current ? 'Current release' : search.hasFile ? 'Replace with this' : 'Download this';
+                choose.textContent = r.current ? 'Current release' : search.seasonNumber != null ? 'Replace season with this' : search.hasFile ? 'Replace with this' : 'Download this';
                 choose.disabled = busy || !r.selectable;
                 choose.addEventListener('click', async function () {
-                    const prompt = search.hasFile
+                    const affected = (search.affectedEpisodes || []).map(function (e) { return 'S' + e.seasonNumber + ' E' + e.episodeNumber; }).join(', ');
+                    const prompt = search.seasonNumber != null
+                        ? 'Replace the whole of season ' + search.seasonNumber + ' with this pack? After the download is accepted, '
+                            + (search.fileCount || 0) + ' existing files will be removed. This affects all users.'
+                            + (affected ? '\nEpisodes: ' + affected : '')
+                            + (reject.checked ? '\nThe identified old releases will also be marked as bad.' : '')
+                        : search.hasFile
                         ? 'Download this release and remove the current library file after the download is accepted?'
                             + (reject.checked ? ' The current release will also be marked as bad.' : '')
                         : 'Send this release to the download client?';
                     if (!window.confirm(prompt)) return;
                     busy = true;
-                    requestSelect.disabled = episodeSelect.disabled = searchButton.disabled = reject.disabled = true;
+                    setControlsDisabled(true);
+                    reject.disabled = true;
                     renderRows();
                     message.textContent = 'Sending selected release…';
                     try {
-                        const result = await api('releases', 'POST', { searchToken: search.searchToken, releaseIndex: r.index, rejectCurrent: reject.checked });
+                        const payload = { searchToken: search.searchToken, releaseIndex: r.index, rejectCurrent: reject.checked };
+                        if (search.seasonNumber != null) payload.seasonNumber = search.seasonNumber;
+                        const result = await api('releases', 'POST', payload);
                         if (!dialog.isConnected) return;
                         clearSearch();
                         message.textContent = result.message || 'Download queued.';
@@ -2106,7 +2129,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     } finally {
                         busy = false;
                         if (dialog.isConnected) {
-                            requestSelect.disabled = episodeSelect.disabled = searchButton.disabled = false;
+                            setControlsDisabled(false);
+                            updateScope();
                         }
                     }
                 });
@@ -2119,19 +2143,30 @@ window.jellySeerrLog = window.jellySeerrLog || {
             clearSearch();
             searchButton.disabled = true;
             episodeSelect.replaceChildren();
+            seasonSelect.replaceChildren();
+            modeSelect.disabled = true;
             message.textContent = 'Loading download options…';
             try {
                 const options = await api('downloads');
                 if (!dialog.isConnected || version !== generation) return;
-                dialog.querySelector('[data-episode-label]').hidden = !options.isTv;
+                const canChooseEpisodes = options.canChooseEpisodes !== false && canModifyRequest(requests.find(function (r) { return String(requestIdOf(r)) === requestSelect.value; }));
+                modeSelect.querySelector('option[value="episode"]').disabled = !canChooseEpisodes;
+                if (!canChooseEpisodes) modeSelect.value = 'season';
+                modeSelect.disabled = false;
                 (options.episodes || []).forEach(function (e) {
                     const option = document.createElement('option');
                     option.value = e.id;
                     option.textContent = 'S' + e.seasonNumber + ' E' + e.episodeNumber + ' — ' + (e.title || '') + (e.hasFile ? ' (downloaded)' : '');
                     episodeSelect.appendChild(option);
                 });
-                searchButton.disabled = options.isTv && !episodeSelect.options.length;
-                message.textContent = searchButton.disabled ? 'No approved episodes are available on this request.' : 'Select Search releases to see available downloads.';
+                (options.seasons || []).forEach(function (s) {
+                    const option = document.createElement('option');
+                    option.value = s.seasonNumber;
+                    option.textContent = 'Season ' + s.seasonNumber + ' · ' + s.episodeCount + ' episodes · ' + s.fileCount + ' existing files';
+                    seasonSelect.appendChild(option);
+                });
+                updateScope();
+                message.textContent = searchButton.disabled ? 'No approved episodes or seasons are available on this request.' : 'Select Search releases to see available downloads.';
             } catch (error) {
                 if (dialog.isConnected && version === generation) message.textContent = errorText(error);
             }
@@ -2141,26 +2176,37 @@ window.jellySeerrLog = window.jellySeerrLog || {
             option.value = requestIdOf(req);
             const seasons = (req.seasons || []).map(function (s) { return s.seasonNumber; }).join(', ');
             option.textContent = (requestIs4k(req) ? '4K' : 'Standard') + ' request #' + requestIdOf(req)
-                + (mediaType === 'tv' && seasons ? ' · Seasons ' + seasons : '');
+                + (mediaType === 'tv' && seasons ? ' · Seasons ' + seasons : '')
+                + (mediaType === 'tv' && !canModifyRequest(req) ? ' · ' + (requestOwnerName(req) || 'Another user') : '');
             requestSelect.appendChild(option);
         });
         requestSelect.addEventListener('change', loadOptions);
         episodeSelect.addEventListener('change', function () { ++generation; clearSearch(); message.textContent = 'Search for the selected episode.'; });
+        modeSelect.addEventListener('change', function () { ++generation; clearSearch(); updateScope(); message.textContent = 'Search for the selected download type.'; });
+        seasonSelect.addEventListener('change', function () { ++generation; clearSearch(); message.textContent = 'Search for the selected season.'; });
         dialog.querySelector('[data-filter]').addEventListener('input', renderRows);
         dialog.querySelector('[data-show-rejected]').addEventListener('change', renderRows);
         searchButton.addEventListener('click', async function () {
             const version = ++generation;
             clearSearch();
             loading = true;
-            searchButton.disabled = requestSelect.disabled = episodeSelect.disabled = true;
+            setControlsDisabled(true);
             message.textContent = 'Searching indexers… This may take a few minutes.';
             try {
-                const found = await api('releases' + (mediaType === 'tv' ? '?episodeId=' + encodeURIComponent(episodeSelect.value) : ''));
+                const query = mediaType !== 'tv' ? '' : modeSelect.value === 'season'
+                    ? '?seasonNumber=' + encodeURIComponent(seasonSelect.value) : '?episodeId=' + encodeURIComponent(episodeSelect.value);
+                const found = await api('releases' + query);
                 if (!dialog.isConnected || version !== generation) return;
                 search = found;
                 const current = dialog.querySelector('[data-current]');
                 current.hidden = !found.hasFile;
                 dialog.querySelector('[data-current-name]').textContent = 'Current: ' + found.currentRelease;
+                dialog.querySelector('[data-affected]').textContent = (found.affectedEpisodes || []).map(function (e) {
+                    return 'S' + e.seasonNumber + ' E' + e.episodeNumber + (e.title ? ' — ' + e.title : '');
+                }).join('; ');
+                dialog.querySelector('[data-reject-label]').textContent = found.seasonNumber != null
+                    ? 'Mark the identified old releases for this season as bad (only those releases).'
+                    : 'Mark the current release as bad so it is skipped next time (only this release).';
                 dialog.querySelector('[data-current-help]').textContent = found.message || '';
                 reject.disabled = !found.canRejectCurrent;
                 reject.checked = !!found.canRejectCurrent;
@@ -2170,7 +2216,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
             } finally {
                 loading = false;
                 if (dialog.isConnected && version === generation) {
-                    searchButton.disabled = requestSelect.disabled = episodeSelect.disabled = false;
+                    setControlsDisabled(false);
+                    updateScope();
                     renderRows();
                 }
             }

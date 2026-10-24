@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Add Advanced download: requesters can choose movie or episode releases and replace bad files without admin approval, optionally blocklisting only the old release. Show quality, size, indexer, seeders and rejection reasons; enforce ownership, approved seasons and profile restrictions. Add backend and picker tests to CI and release builds.",
+  "changelog": "Add Replace whole season to Advanced download, including seasons requested by other users without admin approval. Show affected episodes and existing file counts before confirmation; require packs mapped to the whole selected season, preserve other seasons and enforce profile restrictions. Deduplicate old files and release blocklisting; add season replacement tests.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-20T00:00:00.0000000Z",
-  "version": "1.0.17.0",
+  "version": "1.0.18.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

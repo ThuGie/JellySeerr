@@ -4,7 +4,7 @@ JellySeerr adds Movies, TV, and Requests tabs to the Jellyfin web client. You ca
 
 Admins decide which Radarr/Sonarr quality profiles are offered. Click a title for details: request it, add or remove it from the Seerr watchlist, or cancel a pending request.
 
-**Advanced download** lets requesters choose a specific movie or episode release for their approved or completed requests, without administrator approval. Search results show quality, size, indexer, seeders and rejection reasons. Use **Replace with this** to replace a bad library file; optionally mark its original release as bad so Sonarr/Radarr blocklists that release, not the indexer. The old file is removed only after the chosen replacement is accepted by the download client. [Usage and limitations](doc/advanced-downloads.md).
+**Advanced download** lets requesters choose a specific movie or episode release for their approved or completed requests, without administrator approval. **Replace whole season** also works on other users' approved TV requests, with an affected-episode list and confirmation. Search results show quality, size, indexer, seeders and rejection reasons. Optionally mark the original releases as bad so Sonarr/Radarr blocklists those releases, not the indexer. Old files are removed only after the chosen replacement is accepted by the download client. [Usage and limitations](doc/advanced-downloads.md).
 
 ## Prerequisites
 

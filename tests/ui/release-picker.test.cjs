@@ -23,8 +23,12 @@ function fixture({ tv = false, records = [ownRequest], postError = null } = {}) 
                 if (postError) throw { responseJSON: { message: postError } };
                 return { message: 'Replacement queued.' };
             }
-            if (options.url.endsWith('/downloads')) return { isTv: tv, episodes: tv ? [{ id: 21, seasonNumber: 1, episodeNumber: 1, title: 'Pilot', hasFile: true }] : [] };
+            if (options.url.endsWith('/downloads')) return { isTv: tv,
+                seasons: tv ? [{ seasonNumber: 1, episodeCount: 2, fileCount: 2 }] : [],
+                episodes: tv ? [{ id: 21, seasonNumber: 1, episodeNumber: 1, title: 'Pilot', hasFile: true }] : [] };
             return {
+                ...(options.url.includes('seasonNumber=') ? { seasonNumber: 1, fileCount: 2,
+                    affectedEpisodes: [{ seasonNumber: 1, episodeNumber: 1, title: 'Pilot' }, { seasonNumber: 1, episodeNumber: 2, title: 'Second episode' }] } : {}),
                 searchToken: 'opaque-token', hasFile: true, currentRelease: 'Old.Release', canRejectCurrent: true,
                 releases: [
                     { index: 0, title: '<img src=x onerror=alert(1)>', quality: '1080p', indexer: 'Indexer A', size: 1000000000, seeders: 15, selectable: true, rejections: [] },
@@ -135,5 +139,58 @@ test('Escape closes only the release picker', async () => {
         f.q('dialog').dispatchEvent(new f.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         assert.equal(f.q('dialog'), null);
         assert.equal(parentClosed, false);
+    } finally { f.close(); }
+});
+
+test('another requester can select a whole season and sees affected episodes before confirmation', async () => {
+    const f = fixture({ tv: true, records: [{ id: 43, status: 5, requestedBy: { id: 8, displayName: 'Other viewer' }, seasons: [{ seasonNumber: 1 }] }] });
+    try {
+        await tick();
+        assert.equal(f.q('[data-request]').options.length, 1);
+        assert.match(f.q('[data-request]').textContent, /Other viewer/);
+        assert.equal(f.q('[data-mode]').value, 'season');
+        assert.equal(f.q('[data-mode] option[value="episode"]').disabled, true);
+        assert.equal(f.q('[data-episode-label]').hidden, true);
+        assert.equal(f.q('[data-season-label]').hidden, false);
+        f.q('[data-search]').click();
+        await tick();
+        assert.ok(f.calls.some(c => c.url.endsWith('/releases?seasonNumber=1')));
+        assert.match(f.q('[data-affected]').textContent, /S1 E2 — Second episode/);
+        let confirmation = '';
+        f.w.confirm = text => { confirmation = text; return true; };
+        f.q('.bst-release-row button').click();
+        await tick();
+        assert.match(confirmation, /whole of season 1/);
+        assert.match(confirmation, /2 existing files/);
+        assert.match(confirmation, /S1 E1, S1 E2/);
+        const post = f.calls.find(c => c.type === 'POST');
+        assert.ok(post.url.includes('/request/43/'));
+        assert.equal(JSON.parse(post.data).seasonNumber, 1);
+    } finally { f.close(); }
+});
+
+test('own TV request can switch between episode and season without reusing old search results', async () => {
+    const f = fixture({ tv: true });
+    try {
+        await tick();
+        f.q('[data-search]').click();
+        await tick();
+        assert.ok(f.q('.bst-release-row'));
+        const mode = f.q('[data-mode]');
+        mode.value = 'season';
+        mode.dispatchEvent(new f.w.Event('change'));
+        assert.equal(f.q('.bst-release-row'), null);
+        f.q('[data-search]').click();
+        await tick();
+        assert.ok(f.calls.some(c => c.url.endsWith('seasonNumber=1')));
+        f.w.confirm = () => false;
+        f.q('.bst-release-row button').click();
+        await tick();
+        assert.equal(f.calls.filter(c => c.type === 'POST').length, 0);
+        mode.value = 'episode';
+        mode.dispatchEvent(new f.w.Event('change'));
+        assert.equal(f.q('[data-episode-label]').hidden, false);
+        assert.equal(f.q('[data-season-label]').hidden, true);
+        assert.equal(f.q('.bst-release-row'), null);
     } finally { f.close(); }
 });

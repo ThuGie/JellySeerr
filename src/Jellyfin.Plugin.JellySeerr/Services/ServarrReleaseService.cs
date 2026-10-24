@@ -8,7 +8,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Jellyfin.Plugin.JellySeerr.Services;
 
-public sealed record ReleaseContext(Guid UserId, JObject Request, JObject Server, bool Allow4k)
+public sealed record ReleaseContext(Guid UserId, JObject Request, JObject Server, bool Allow4k, bool CanChooseEpisodes = true)
 {
     public int RequestId => Request.Value<int>("id");
     public bool IsTv => Request.Value<string>("type") == "tv";
@@ -21,7 +21,7 @@ public sealed class ReleaseSelectionException(int status, string message) : Exce
 }
 
 /// <summary>Only opaque, user-bound search results can be grabbed. No URLs or Arr IDs from the browser are trusted.</summary>
-public class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrReleaseService> logger)
+public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrReleaseService> logger)
 {
     private sealed record Search(ReleaseContext Context, int EpisodeId, int FileId, int ProfileId,
         JArray Releases, DateTime Expires);
@@ -37,6 +37,12 @@ public class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrRe
         {
             ["title"] = title.Value<string>("title"),
             ["isTv"] = context.IsTv,
+            ["canChooseEpisodes"] = context.CanChooseEpisodes,
+            ["seasons"] = new JArray(episodes.OfType<JObject>().GroupBy(e => e.Value<int>("seasonNumber")).Select(g => new JObject
+            {
+                ["seasonNumber"] = g.Key, ["episodeCount"] = g.Count(),
+                ["fileCount"] = g.Select(e => e.Value<int>("episodeFileId")).Where(id => id > 0).Distinct().Count()
+            })),
             ["episodes"] = new JArray(episodes.OfType<JObject>().Select(e => new JObject
             {
                 ["id"] = e["id"], ["seasonNumber"] = e["seasonNumber"],
@@ -48,6 +54,7 @@ public class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrRe
 
     public async Task<JObject> SearchAsync(ReleaseContext context, int episodeId, CancellationToken ct)
     {
+        if (!context.CanChooseEpisodes) throw new ReleaseSelectionException(403, "Only whole-season replacement is available for another user's request.");
         using HttpClient client = CreateClient(context);
         JObject title = await FindTitle(client, context, ct);
         JObject? episode = await SelectEpisode(client, context, title, episodeId, ct);
@@ -94,6 +101,8 @@ public class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrRe
 
     public async Task<JObject> DownloadAsync(ReleaseContext context, ReleaseDownloadPayload payload, CancellationToken ct)
     {
+        if (payload.SeasonNumber.HasValue) return await DownloadSeasonAsync(context, payload, ct);
+        if (!context.CanChooseEpisodes) throw new ReleaseSelectionException(403, "Only whole-season replacement is available for another user's request.");
         await _mutation.WaitAsync(ct);
         try
         {

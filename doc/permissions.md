@@ -67,6 +67,7 @@ Server-side request submit calls `HasRequestPermission` again before POSTing to 
 | Approve / Decline / Retry | `canManageRequests` |
 | Unmonitor in Arr | Owner of a request on that title **or** admin |
 | Advanced download / Replace file | Owner of an approved/completed request **or** manager; request permissions still required; TV restricted to approved seasons |
+| Replace whole season | Any mapped user with TV request permission, including another user's approved/completed season; 4K permission still required for 4K requests |
 | Open in Seerr / Radarr / Sonarr | `canOpenLocalServices` (admin + LAN) |
 | Watchlist / Report issue | Mapped user (Seerr enforces further) |
 | Requests tab “All” | Manage-requests + `EnableManagerTools` |

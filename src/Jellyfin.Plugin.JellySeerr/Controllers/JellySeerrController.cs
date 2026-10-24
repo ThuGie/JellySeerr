@@ -595,22 +595,25 @@ public class JellySeerrController : ControllerBase
     [Authorize]
     public Task<IActionResult> DownloadOptions(int id, [FromServices] IUserManager users,
         [FromServices] ServarrReleaseService releases, CancellationToken cancellationToken) =>
-        WithReleaseContext(id, users, context => releases.OptionsAsync(context, cancellationToken), cancellationToken);
+        WithReleaseContext(id, users, context => releases.OptionsAsync(context, cancellationToken), cancellationToken, sharedSeason: true);
 
     [HttpGet("request/{id:int}/releases")]
     [Authorize]
     public Task<IActionResult> SearchReleases(int id, [FromServices] IUserManager users,
-        [FromServices] ServarrReleaseService releases, [FromQuery] int episodeId = 0, CancellationToken cancellationToken = default) =>
-        WithReleaseContext(id, users, context => releases.SearchAsync(context, episodeId, cancellationToken), cancellationToken);
+        [FromServices] ServarrReleaseService releases, [FromQuery] int episodeId = 0, [FromQuery] int? seasonNumber = null, CancellationToken cancellationToken = default) =>
+        WithReleaseContext(id, users, context => seasonNumber.HasValue
+            ? episodeId != 0 ? throw new ReleaseSelectionException(400, "Choose an episode or a season, not both.")
+                : releases.SearchSeasonAsync(context, seasonNumber.Value, cancellationToken)
+            : releases.SearchAsync(context, episodeId, cancellationToken), cancellationToken, sharedSeason: seasonNumber.HasValue);
 
     [HttpPost("request/{id:int}/releases")]
     [Authorize]
     public Task<IActionResult> DownloadRelease(int id, [FromServices] IUserManager users,
         [FromServices] ServarrReleaseService releases, [FromBody] ReleaseDownloadPayload payload, CancellationToken cancellationToken) =>
-        WithReleaseContext(id, users, context => releases.DownloadAsync(context, payload, cancellationToken), cancellationToken);
+        WithReleaseContext(id, users, context => releases.DownloadAsync(context, payload, cancellationToken), cancellationToken, sharedSeason: payload.SeasonNumber.HasValue);
 
     private async Task<IActionResult> WithReleaseContext(int requestId, IUserManager users,
-        Func<ReleaseContext, Task<JObject>> action, CancellationToken ct)
+        Func<ReleaseContext, Task<JObject>> action, CancellationToken ct, bool sharedSeason = false)
     {
         Response.Headers.CacheControl = "no-store";
         Guid userId = GetUserId();
@@ -624,8 +627,9 @@ public class JellySeerrController : ControllerBase
             // requests cannot use direct Arr access to bypass Seerr approval or quota handling.
             JObject? request = await _seerr.GetJsonAsync($"/api/v1/request/{requestId}", null, ct).ConfigureAwait(false) as JObject;
             if (request == null) return NotFound(new { message = "Request could not be loaded." });
-            if (!ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match)))
-                return StatusCode(403, new { message = "Only the requester or a manager can choose downloads for an approved request." });
+            bool canChooseEpisodes = ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match));
+            if (!ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match), sharedSeason))
+                return StatusCode(403, new { message = "Choose an approved request. Other users' TV requests allow whole-season replacement only." });
             string? type = request.Value<string>("type");
             if (type is not ("movie" or "tv")) return BadRequest(new { message = "Unsupported media type." });
             bool is4k = request.Value<bool?>("is4k") == true;
@@ -654,7 +658,7 @@ public class JellySeerrController : ControllerBase
                 server["baseUrl"] = direct.AbsolutePath.TrimEnd('/');
             }
             bool allow4k = is4k && !config.Disable4k && UserMappingService.HasRequestPermission(match.Permissions, type, true);
-            JObject result = await action(new ReleaseContext(userId, request, server, allow4k)).ConfigureAwait(false);
+            JObject result = await action(new ReleaseContext(userId, request, server, allow4k, canChooseEpisodes)).ConfigureAwait(false);
             return Content(result.ToString(Newtonsoft.Json.Formatting.None), "application/json");
         }
         catch (ReleaseSelectionException ex) { return StatusCode(ex.Status, new { message = ex.Message }); }

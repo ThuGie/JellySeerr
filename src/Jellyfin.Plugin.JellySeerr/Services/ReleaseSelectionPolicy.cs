@@ -5,11 +5,14 @@ namespace Jellyfin.Plugin.JellySeerr.Services;
 /// <summary>Interactive grabs bypass Arr's decision engine, so enforce it before sending a grab.</summary>
 public static class ReleaseSelectionPolicy
 {
-    public static bool CanAccess(JObject request, int userId, bool manager) =>
+    public static bool CanAccess(JObject request, int userId, bool manager, bool sharedSeason = false) =>
         request.Value<int?>("status") is 2 or 5
-        && (manager || request["requestedBy"]?.Value<int?>("id") == userId);
+        && (manager || request["requestedBy"]?.Value<int?>("id") == userId
+            || sharedSeason && request.Value<string>("type") == "tv");
 
     public static bool IsDiskRejection(string reason) =>
+        reason.StartsWith("Season pack does not meet the upgrade criteria.", StringComparison.OrdinalIgnoreCase)
+        ||
         reason.StartsWith("Existing file meets cutoff:", StringComparison.OrdinalIgnoreCase)
         || reason.StartsWith("Existing file on disk is of equal or higher preference:", StringComparison.OrdinalIgnoreCase)
         || reason.StartsWith("Existing file on disk is of equal or higher revision:", StringComparison.OrdinalIgnoreCase)
@@ -42,6 +45,23 @@ public static class ReleaseSelectionPolicy
         if (numbers == null || numbers.Count == 0) numbers = release["episodeNumbers"] as JArray;
         return season == episode.Value<int?>("seasonNumber") && numbers?.Count == 1
             && numbers[0].Value<int>() == episode.Value<int?>("episodeNumber");
+    }
+
+    public static string SeasonScopeReason(JObject release, int seriesId, int season, JArray episodes)
+    {
+        if (release.Value<bool?>("fullSeason") != true) return "Select a full-season pack for season replacement.";
+        if (release.Value<int?>("mappedSeriesId") != seriesId) return "This pack is not mapped to the selected series.";
+        int? mappedSeason = release.Value<int?>("mappedSeasonNumber") ?? release.Value<int?>("seasonNumber");
+        int[] seasons = (release["seasonNumbers"] as JArray)?.Values<int>().ToArray() ?? [];
+        if (mappedSeason != season || seasons.Length > 1 || seasons.Length == 1 && seasons[0] != season)
+            return "This pack includes a different season or multiple seasons.";
+        if ((release["mappedEpisodeInfo"] as JArray)?.OfType<JObject>().Any(e => e.Value<int?>("seasonNumber") != season) == true)
+            return "This pack includes episodes from another season.";
+        HashSet<int> expected = episodes.OfType<JObject>().Select(e => e.Value<int>("episodeNumber")).ToHashSet();
+        HashSet<int> covered = (release["mappedEpisodeNumbers"] as JArray)?.Values<int>().ToHashSet() ?? [];
+        if (covered.Count == 0) return "Sonarr could not verify which episodes this pack covers.";
+        if (!covered.SetEquals(expected)) return $"Incomplete or mismatched pack: covers {covered.Intersect(expected).Count()} of {expected.Count} known episodes.";
+        return "";
     }
 
     public static JObject? FindGrab(JArray history, JObject file)
