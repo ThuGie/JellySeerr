@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.JellySeerr.Controllers;
 
 [ApiController]
 [Route("JellySeerr")]
-public class JellySeerrController : ControllerBase
+public partial class JellySeerrController : ControllerBase
 {
     private readonly DiscoveryService _discoveryService;
     private readonly RequestService _requestService;
@@ -680,7 +680,7 @@ public class JellySeerrController : ControllerBase
                 server["baseUrl"] = direct.AbsolutePath.TrimEnd('/');
             }
             bool allow4k = is4k && !config.Disable4k && UserMappingService.HasRequestPermission(match.Permissions, type, true);
-            JObject result = await action(new ReleaseContext(userId, request, server, allow4k, canChooseEpisodes)).ConfigureAwait(false);
+            JObject result = await action(new ReleaseContext(userId, request, server, allow4k, canChooseEpisodes, username)).ConfigureAwait(false);
             return Content(result.ToString(Newtonsoft.Json.Formatting.None), "application/json");
         }
         catch (ReleaseSelectionException ex) { return StatusCode(ex.Status, new { message = ex.Message }); }

@@ -2156,7 +2156,10 @@ window.jellySeerrLog = window.jellySeerrLog || {
                         }
                     }
                 });
-                row.append(name, meta, note, choose);
+                const compare = document.createElement('button');
+                compare.type = 'button'; compare.className = 'bst-btn-ghost'; compare.textContent = 'Compare'; compare.disabled = busy;
+                compare.addEventListener('click', function () { if (window.jellySeerrUserTools) window.jellySeerrUserTools.compare(search.currentFileInfo, r); });
+                row.append(name, meta, note, choose, compare);
                 results.appendChild(row);
             });
         }
@@ -2649,28 +2652,26 @@ window.jellySeerrLog = window.jellySeerrLog || {
             });
         }
 
+        if (window.jellySeerrUserTools) {
+            const requests = getRequestRecords(data).filter(function (r) { return [2, 5].includes(requestStatusOf(r)) && (mediaType === 'tv' || canModifyRequest(r)); });
+            const anchor = root.querySelector('[data-action="availability"]') || root.querySelector('[data-action="issue"]');
+            if (anchor && requests.length) {
+                [['activity', 'Replacement history'], ['recovery', 'Recover download']].forEach(function (tool) {
+                    const b = document.createElement('button'); b.type = 'button'; b.className = 'bst-btn-ghost'; b.textContent = tool[1];
+                    b.addEventListener('click', function () { window.jellySeerrUserTools.requestTool(requests.map(function (r) {
+                        return { id: requestIdOf(r), is4k: requestIs4k(r), type: mediaType };
+                    }), tool[0]); });
+                    anchor.parentNode.appendChild(b);
+                });
+            }
+        }
+
         const issueBtn = root.querySelector('[data-action="issue"]');
         if (issueBtn) {
             issueBtn.addEventListener('click', function () {
-                const message = window.prompt('Describe the issue with this title');
-                if (!message) {
-                    return;
-                }
                 const seerrMediaId = parseInt(issueBtn.getAttribute('data-seerr-media-id') || '', 10);
-                if (!Number.isFinite(seerrMediaId) || seerrMediaId <= 0) {
-                    notifyUser('No Seerr media record yet. Request this title before reporting an issue.');
-                    return;
-                }
-                ApiClient.ajax({
-                    url: ApiClient.getUrl('JellySeerr/issue'),
-                    type: 'POST',
-                    data: JSON.stringify({ issueType: 1, message: message, mediaId: seerrMediaId }),
-                    contentType: 'application/json'
-                }).then(function () {
-                    notifyUser('Issue reported');
-                }).catch(function () {
-                    notifyUser('Could not report issue');
-                });
+                if (seerrMediaId > 0 && window.jellySeerrUserTools) window.jellySeerrUserTools.issues(seerrMediaId, mediaType);
+                else notifyUser('Request this title before reporting an issue.');
             });
         }
 

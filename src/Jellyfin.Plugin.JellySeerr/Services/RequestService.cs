@@ -269,6 +269,10 @@ public class RequestService
         IssuePayload payload,
         CancellationToken cancellationToken)
     {
+        if (payload.IssueType is < 1 or > 4 || payload.MediaId <= 0 || string.IsNullOrWhiteSpace(payload.Message)
+            || payload.Message.Length > 4000 || payload.ProblemSeason < 0 || payload.ProblemEpisode < 1
+            || payload.ProblemEpisode.HasValue && !payload.ProblemSeason.HasValue)
+            return (400, "{\"message\":\"Choose a category, describe the problem (maximum 4000 characters), and select a valid season/episode.\"}", "application/json");
         SeerrUserMatch? user = await _users.ResolveAsync(jellyfinUserId, username, cancellationToken).ConfigureAwait(false);
         if (user == null || !user.Mapped)
         {
@@ -280,6 +284,8 @@ public class RequestService
             ["issueType"] = payload.IssueType,
             ["message"] = payload.Message ?? string.Empty,
             ["mediaId"] = payload.MediaId,
+            ["problemSeason"] = payload.ProblemSeason,
+            ["problemEpisode"] = payload.ProblemEpisode,
         };
         return await _seerr
             .SendAsync(HttpMethod.Post, "/api/v1/issue", body.ToString(), user.Id, cancellationToken)

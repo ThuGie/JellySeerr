@@ -36,6 +36,8 @@ https://raw.githubusercontent.com/ThuGie/JellySeerr/main/manifest.json
 
 ## What users see
 
+The [user tools guide](doc/user-tools.md) covers the release calendar, personal notification preferences, categorized issue reporting and comments, replacement history, release comparison, and failed/stalled download recovery. Calendar and Notifications are in Requests; the other tools are in title details and Advanced download.
+
 - **Movies / TV** — trending, popular, genres, studios, networks, streaming services.
 - **Search** — Seerr movie and TV hits in Jellyfin search (can be turned off).
 - **Details** — request, trailer, watchlist, similar titles, and a report-issue button after something is requested.

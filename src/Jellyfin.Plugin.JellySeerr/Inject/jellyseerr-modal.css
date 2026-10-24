@@ -1099,3 +1099,10 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+.bst-user-tools fieldset { margin: .8em 0; border: 1px solid #777; border-radius: .4em; }
+.bst-user-tools .bst-tools-check { display: inline-flex; align-items: center; gap: .4em; margin: .4em .8em; }
+.bst-user-tools textarea { display: block; width: 96%; min-height: 5em; margin: .8em 0; color: inherit; background: #222; }
+.bst-user-tools input, .bst-user-tools select { margin: .4em; padding: .5em; }
+.bst-tools-table { width: 100%; border-collapse: collapse; }
+.bst-tools-table th, .bst-tools-table td { padding: .6em; text-align: left; border-bottom: 1px solid #777; overflow-wrap: anywhere; }

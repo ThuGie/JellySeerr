@@ -21,7 +21,10 @@ jobs:
         with:
           node-version: "22"
       - name: Check browser scripts
-        run: node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-modal.js
+        run: |
+          node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-modal.js
+          node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-user-tools.js
+          node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-requests.js
       - name: Test release picker
         run: |
           npm ci --prefix tests/ui

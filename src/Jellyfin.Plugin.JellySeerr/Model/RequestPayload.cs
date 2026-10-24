@@ -42,6 +42,12 @@ public class RequestPayload
 
 public class IssuePayload
 {
+    [JsonPropertyName("problemSeason")]
+    public int? ProblemSeason { get; set; }
+
+    [JsonPropertyName("problemEpisode")]
+    public int? ProblemEpisode { get; set; }
+
     [JsonPropertyName("issueType")]
     public int IssueType { get; set; }
 

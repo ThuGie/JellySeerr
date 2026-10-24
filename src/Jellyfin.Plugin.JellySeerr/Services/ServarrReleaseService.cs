@@ -8,7 +8,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Jellyfin.Plugin.JellySeerr.Services;
 
-public sealed record ReleaseContext(Guid UserId, JObject Request, JObject Server, bool Allow4k, bool CanChooseEpisodes = true)
+public sealed record ReleaseContext(Guid UserId, JObject Request, JObject Server, bool Allow4k, bool CanChooseEpisodes = true, string ActorName = "")
 {
     public int RequestId => Request.Value<int>("id");
     public bool IsTv => Request.Value<string>("type") == "tv";
@@ -21,7 +21,7 @@ public sealed class ReleaseSelectionException(int status, string message) : Exce
 }
 
 /// <summary>Only opaque, user-bound search results can be grabbed. No URLs or Arr IDs from the browser are trusted.</summary>
-public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrReleaseService> logger)
+public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<ServarrReleaseService> logger, ReleaseActivityStore? activity = null)
 {
     private sealed record Search(ReleaseContext Context, int EpisodeId, int FileId, int ProfileId,
         JArray Releases, DateTime Expires);
@@ -93,6 +93,7 @@ public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<S
         return new JObject
         {
             ["searchToken"] = token, ["releases"] = rows, ["hasFile"] = file != null,
+            ["currentFileInfo"] = FileComparison(file),
             ["currentRelease"] = currentTitle ?? (file == null ? "" : "Existing library file"),
             ["canRejectCurrent"] = grab != null,
             ["message"] = file != null && grab == null ? "The original grab could not be identified. You can replace the file, but cannot blocklist its release." : ""
@@ -154,6 +155,7 @@ public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<S
             body[context.IsTv ? "episodeId" : "movieId"] = context.IsTv ? search.EpisodeId : title.Value<int>("id");
             // Do not delete a library file until the selected replacement was accepted by the download client.
             await Send(client, HttpMethod.Post, "release", body, ct);
+            activity?.Add(context, file != null ? "Replacement accepted" : "Download accepted", payload.RejectCurrent ? "Old release blocklist requested" : "Queued", release.Value<string>("title"), episode?.Value<int>("seasonNumber"), episode?.Value<int>("episodeNumber"));
             string message = "Selected release sent to the download client.";
             // Once a grab succeeds, finish cleanup independently of a browser closing the dialog.
             using CancellationTokenSource cleanup = new(TimeSpan.FromSeconds(60));
@@ -177,6 +179,7 @@ public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<S
                 logger.LogWarning(ex, "JS • replacement queued but cleanup failed for request {RequestId}, old file {FileId}", context.RequestId, search.FileId);
                 message = "Replacement queued, but blocklisting or removal of the old file could not finish. Check Sonarr/Radarr before retrying.";
             }
+            activity?.Add(context, "Replacement cleanup", message, release.Value<string>("title"), episode?.Value<int>("seasonNumber"), episode?.Value<int>("episodeNumber"));
             JsonMemoryCache.RemoveByPrefix("servarr:");
             JsonMemoryCache.RemoveByPrefix("requests:");
             return new JObject { ["message"] = message };

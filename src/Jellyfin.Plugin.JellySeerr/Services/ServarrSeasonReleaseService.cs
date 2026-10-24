@@ -55,6 +55,7 @@ public partial class ServarrReleaseService
         {
             ["searchToken"] = token, ["seasonNumber"] = seasonNumber, ["releases"] = rows,
             ["hasFile"] = state.Files.Count > 0, ["fileCount"] = state.Files.Count,
+            ["currentFileInfo"] = new JObject { ["files"] = new JArray(state.Files.OfType<JObject>().Select(FileComparison)) },
             ["currentRelease"] = $"Season {seasonNumber}: {state.Files.Count} existing files, {state.Episodes.Count} known episodes",
             ["affectedEpisodes"] = new JArray(state.Episodes.OfType<JObject>().Where(e => e.Value<int>("episodeFileId") > 0)
                 .Select(e => new JObject { ["seasonNumber"] = seasonNumber, ["episodeNumber"] = e["episodeNumber"], ["title"] = e["title"] })),
@@ -109,6 +110,7 @@ public partial class ServarrReleaseService
             }, ct);
             logger.LogInformation("JS • user {UserId} queued season {Season} replacement for request {RequestId}, affecting {FileCount} files",
                 context.UserId, search.SeasonNumber, context.RequestId, state.Files.Count);
+            activity?.Add(context, "Season replacement accepted", payload.RejectCurrent ? "Old releases blocklist requested" : "Queued", release.Value<string>("title"), search.SeasonNumber);
             using CancellationTokenSource cleanup = new(TimeSpan.FromMinutes(2));
             bool failed = false;
             // A season may have many episodes imported from the same pack. Mark that original
@@ -149,6 +151,7 @@ public partial class ServarrReleaseService
                     logger.LogWarning(ex, "JS • season replacement queued but old file {FileId} removal failed for request {RequestId}", file.Value<int>("id"), context.RequestId);
                 }
             }
+            activity?.Add(context, "Season cleanup", failed ? "Some cleanup failed; check Sonarr" : "Completed", release.Value<string>("title"), search.SeasonNumber);
             JsonMemoryCache.RemoveByPrefix("servarr:");
             JsonMemoryCache.RemoveByPrefix("requests:");
             return new JObject { ["message"] = failed

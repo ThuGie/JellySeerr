@@ -17,6 +17,7 @@ public static class TransformationPatches
             $"<link rel=\"stylesheet\" href=\"../JellySeerr/jellyseerr-modal.css{cacheParam}\" />" +
             $"<link rel=\"stylesheet\" href=\"../JellySeerr/jellyseerr-requests.css{cacheParam}\" />";
         string scripts =
+            $"<script defer src=\"../JellySeerr/jellyseerr-user-tools.js{cacheParam}\"></script>" +
             $"<script defer src=\"../JellySeerr/jellyseerr-modal.js{cacheParam}\"></script>" +
             $"<script defer src=\"../JellySeerr/jellyseerr-nativeui.js{cacheParam}\"></script>" +
             $"<script defer src=\"../JellySeerr/jellyseerr-tabs.js{cacheParam}\"></script>" +

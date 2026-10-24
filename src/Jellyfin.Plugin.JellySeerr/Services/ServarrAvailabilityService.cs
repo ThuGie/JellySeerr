@@ -110,6 +110,7 @@ public partial class ServarrReleaseService
             _missingSearches[key] = DateTime.UtcNow;
             await Send(client, HttpMethod.Post, "command", new JObject { ["name"] = "EpisodeSearch", ["episodeIds"] = new JArray(ids) }, ct);
             logger.LogInformation("JS • user {UserId} searched {Count} missing episodes for request {RequestId}", context.UserId, ids.Length, context.RequestId);
+            activity?.Add(context, "Missing episode search", $"Search accepted for {ids.Length} episodes", season: payload.SeasonNumber);
             return new JObject { ["searchedEpisodeIds"] = new JArray(ids), ["message"] = $"Search started for {ids.Length} missing episodes. Sonarr will choose suitable releases; downloads are not guaranteed. Refresh availability shortly." };
         }
         finally { _mutation.Release(); }

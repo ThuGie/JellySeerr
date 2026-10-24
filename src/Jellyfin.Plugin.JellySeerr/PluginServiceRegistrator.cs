@@ -33,6 +33,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<DiscoveryService>();
         serviceCollection.AddSingleton<ServarrProgressService>();
+        serviceCollection.AddSingleton<ReleaseActivityStore>(services => new ReleaseActivityStore(services.GetRequiredService<MediaBrowser.Common.Configuration.IApplicationPaths>(), services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ReleaseActivityStore>>()));
         serviceCollection.AddSingleton<ServarrReleaseService>();
     }
 }

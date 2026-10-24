@@ -961,6 +961,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
             <div class="verticalSection jellySeerr-requests-panel">
                 <div class="sectionTitleContainer sectionTitleContainer-cards padded-left padded-right">
                     <h2 class="sectionTitle sectionTitle-cards">Requests</h2>
+                    <button type="button" class="jellySeerr-requests-filter" data-user-tool="calendar">Release calendar</button>
+                    <button type="button" class="jellySeerr-requests-filter" data-user-tool="notifications">Notifications</button>
                     <span class="jellySeerr-requests-quota" hidden></span>
                     <button type="button" class="jellySeerr-requests-reload" aria-label="Reload requests" title="Reload requests">
                         <span class="material-icons" aria-hidden="true">refresh</span>
@@ -1025,6 +1027,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
         });
 
         container.addEventListener('click', function (event) {
+            const tool = event.target.closest('[data-user-tool]');
+            if (tool && window.jellySeerrUserTools) { window.jellySeerrUserTools[tool.dataset.userTool](); return; }
             const reloadBtn = event.target.closest('.jellySeerr-requests-reload');
             if (reloadBtn) {
                 event.preventDefault();

@@ -88,3 +88,5 @@ Jellyfin web UI (Inject JS)
 Browser may also call TMDB directly when client-settings returns tmdbApiKey.
 Seerr API key never leaves the server (except via authenticated seerr/{*path} proxy).
 ```
+
+- [User tools: calendar, notifications, issues, history, comparison and recovery](user-tools.md)
