@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.21.0",
+        "changelog": "Add the personal release calendar, Seerr notification preferences, categorized episode issue reporting and comments, persistent replacement history, release comparison, and scoped failed/stalled download recovery with specific-release blocklisting. Preserve whole-season permissions and add backend and interface coverage.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.21.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "A79E0C647A805E2219E39799FFB182DB",
+        "timestamp": "2026-10-24T18:19:51.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.20.0",
         "changelog": "Add Episodes & status and movie Download status with clear request, queue and import explanations. Show per-season episode availability with direct release/replacement actions. Add Find missing episodes for selected aired, monitored, missing and unqueued episodes, with fresh checks, ownership enforcement and repeat-search protection. Add availability and missing-search tests.",
         "targetAbi": "10.11.0.0",
