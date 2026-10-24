@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.19.0",
+        "changelog": "Improve loading across discovery, details, requests and season downloads: defer image downloads, share duplicate fetches, reuse HTTP connections, batch image-cache writes, return browser cache headers, load relevant Arr progress in parallel, scope and bound caches, and stop stale modal responses. Keep release safety checks fresh and add loading regression tests.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.19.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "ED9BE145B69F81D04D13FC9C6A3A2115",
+        "timestamp": "2026-10-24T17:49:18.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.18.0",
         "changelog": "Add Replace whole season to Advanced download, including seasons requested by other users without admin approval. Show affected episodes and existing file counts before confirmation; require packs mapped to the whole selected season, preserve other seasons and enforce profile restrictions. Deduplicate old files and release blocklisting; add season replacement tests.",
         "targetAbi": "10.11.0.0",
