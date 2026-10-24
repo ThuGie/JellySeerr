@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Add the personal release calendar, Seerr notification preferences, categorized episode issue reporting and comments, persistent replacement history, release comparison, and scoped failed/stalled download recovery with specific-release blocklisting. Preserve whole-season permissions and add backend and interface coverage.",
+  "changelog": "Fix hidden release-search errors by reading Jellyfin Fetch responses. Run release searches and downloads as bounded, user-scoped background operations with status polling, support 15-minute indexer searches, show failing Sonarr/Radarr operation and HTTP status, and prevent duplicate grabs on retries.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-20T00:00:00.0000000Z",
-  "version": "1.0.21.0",
+  "version": "1.0.22.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [

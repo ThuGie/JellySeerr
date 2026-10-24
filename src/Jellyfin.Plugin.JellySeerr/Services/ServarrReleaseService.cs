@@ -199,7 +199,7 @@ public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<S
             (server.Value<string>("baseUrl") ?? "").Trim('/') + "/api/v3/");
         HttpClient client = clients.CreateClient();
         client.BaseAddress = uri.Uri;
-        client.Timeout = TimeSpan.FromMinutes(3);
+        client.Timeout = Timeout.InfiniteTimeSpan; // Each operation below has its own bounded timeout.
         client.DefaultRequestHeaders.Add("X-Api-Key", key);
         return client;
     }
@@ -253,16 +253,33 @@ public partial class ServarrReleaseService(IHttpClientFactory clients, ILogger<S
 
     private static async Task<JToken> Read(HttpClient client, string path, CancellationToken ct)
     {
-        using HttpResponseMessage response = await client.GetAsync(path, ct);
-        if (!response.IsSuccessStatusCode) throw new ReleaseSelectionException(502, "Sonarr/Radarr could not complete this lookup or search. Try again shortly.");
-        return JToken.Parse(await response.Content.ReadAsStringAsync(ct));
+        bool search = path.StartsWith("release?", StringComparison.Ordinal);
+        string operation = search ? "release search" : path.Split('?', '/')[0] + " lookup";
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(search ? TimeSpan.FromMinutes(15) : TimeSpan.FromMinutes(1));
+        try
+        {
+            using HttpResponseMessage response = await client.GetAsync(path, limit.Token);
+            if (!response.IsSuccessStatusCode)
+                throw new ReleaseSelectionException(502, $"Sonarr/Radarr {operation} returned HTTP {(int)response.StatusCode}. "
+                    + (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                        ? "Check the API key and server access in Seerr/JellySeerr settings."
+                        : "Check the Sonarr/Radarr log for the failed request."));
+            return JToken.Parse(await response.Content.ReadAsStringAsync(limit.Token));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { throw new ReleaseSelectionException(504, $"Sonarr/Radarr {operation} timed out after {(search ? "15 minutes" : "one minute")}. Check its activity and indexer connections."); }
+        catch (HttpRequestException)
+        { throw new ReleaseSelectionException(502, $"Could not connect to Sonarr/Radarr for the {operation}. Check the address reachable from Jellyfin and the service connection."); }
     }
 
     private static async Task Send(HttpClient client, HttpMethod method, string path, JObject? body, CancellationToken ct)
     {
         using HttpRequestMessage request = new(method, path);
         if (body != null) request.Content = new StringContent(body.ToString(), Encoding.UTF8, "application/json");
-        using HttpResponseMessage response = await client.SendAsync(request, ct);
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage response = await client.SendAsync(request, limit.Token);
         if (!response.IsSuccessStatusCode)
             throw new ReleaseSelectionException(response.StatusCode == HttpStatusCode.NotFound ? 409 : 502,
                 "Sonarr/Radarr could not complete the operation. Refresh the search before trying again.");

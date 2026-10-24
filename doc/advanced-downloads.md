@@ -24,14 +24,27 @@ The selected pack is queued before any old file is removed. Old files shared by 
 
 The backend resolves the actual Radarr/Sonarr instance from Seerr, including separate 4K/anime instances. Credentials and release download URLs never go to the browser. Jellyfin must be able to reach the instance's address. If Seerr uses an internal Docker hostname, configure the plugin's Radarr/Sonarr URL and the same API key to use a Jellyfin-reachable address for that instance.
 
+## Slow searches and errors (1.0.22.0)
+
+The picker starts a background operation and checks its status using short requests. It shows elapsed time while Sonarr/Radarr searches indexers. Release searches, including the eligibility refresh before a download, may take up to 15 minutes each. Other lookups and mutations have one-minute limits, and a complete operation has a 20-minute limit. This avoids holding the browser/proxy connection open during an indexer search.
+
+Work is bounded to two running operations per user and sixteen server-wide. Repeating the same operation identifier returns its existing status instead of submitting another grab. Jobs are held in memory for up to 30 minutes and do not survive a Jellyfin restart. Closing the picker stops browser polling; an accepted background operation continues. Check Arr activity before retrying an interrupted download.
+
+Errors now read Jellyfin's Fetch response body. Failed Arr lookups identify the operation and upstream HTTP status, such as `episodefile lookup returned HTTP 404` or `release search returned HTTP 401`. HTTP authentication errors point to API-key/access settings; other failures point to the Arr log. Proxy error pages show their HTTP status without displaying the page as HTML. Unexpected exceptions are logged by Jellyfin with the request ID; credentials and raw upstream response bodies are not returned to the browser.
+
+The old message “Could not complete the download operation. Check activity before retrying.” hid these responses and did not establish that a timeout occurred. A failed search does not remove or blocklist a file.
+
 ## API
+
+- `POST /JellySeerr/request/{id}/release-jobs`: start a search with `{ "clientToken": "unique-per-search", "episodeId": 123 }` (or `seasonNumber`), or a download with `{ "download": { "searchToken": "...", "releaseIndex": 0, "rejectCurrent": true } }`. Include the download's `seasonNumber` for a season replacement.
+- `GET /JellySeerr/request/{id}/release-jobs/{jobToken}`: user/request-bound status: `running`, `completed` with `result`, or `failed` with `message` and `status`. The web picker uses these endpoints. The synchronous endpoints below remain available for compatibility.
 
 - `GET /JellySeerr/request/{id}/downloads`: title, episode and season options; `canChooseEpisodes` distinguishes ownership from shared season access.
 - `GET /JellySeerr/request/{id}/releases?episodeId=...`: sanitized interactive search results and an opaque search token.
 - `GET /JellySeerr/request/{id}/releases?seasonNumber=...`: full-season search, affected episodes and file count.
 - `POST /JellySeerr/request/{id}/releases`: `{ "searchToken": "...", "releaseIndex": 0, "rejectCurrent": true }`; include `"seasonNumber": 1` for a season search. Season and episode tokens cannot be interchanged.
 
-Each operation reloads request ownership, status and permission checks. Search tokens are bound to the user, request, media and server, expire after ten minutes and are consumed before a grab. The backend refreshes release eligibility before queuing and checks for changed files/profiles. Raw release URLs, arbitrary Arr IDs and override flags are not accepted from the client.
+Starting an operation reloads request ownership, status and permission checks. Polling requires the same mapped Jellyfin user and request. Download submission performs fresh authorization independently of the earlier search. Search tokens are bound to the user, request, media and server, expire after ten minutes and are consumed before a grab. The backend refreshes release eligibility before queuing and checks for changed files/profiles. Raw release URLs, arbitrary Arr IDs and override flags are not accepted from the client.
 
 ## Validation
 

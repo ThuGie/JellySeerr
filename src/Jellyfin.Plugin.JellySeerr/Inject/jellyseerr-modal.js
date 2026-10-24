@@ -2077,16 +2077,36 @@ window.jellySeerrLog = window.jellySeerrLog || {
             dialog.querySelector('[data-season-label]').hidden = !season;
             searchButton.disabled = mediaType === 'tv' && !(season ? seasonSelect : episodeSelect).options.length;
         }
-        function errorText(error) {
-            try {
-                const body = error && (error.responseJSON || JSON.parse(error.responseText || '{}'));
-                return body && body.message || 'Could not complete the download operation. Check activity before retrying.';
-            } catch (_) { return 'Could not reach the download service. Check activity before retrying.'; }
+        async function errorText(error, searching) {
+            const status = error && error.status ? ' (HTTP ' + error.status + ')' : '';
+            const fallback = searching ? 'Release search failed' + status + '. Check the Jellyfin and Sonarr/Radarr logs.'
+                : 'Download operation failed' + status + '. Check activity before retrying.';
+            const text = await readAjaxErrorMessage(error, fallback);
+            return /^\s*</.test(text) ? fallback + ' The server or proxy returned an error page.' : text;
         }
         function api(path, method, body) {
             return ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/request/' + requestSelect.value + '/' + path),
                 type: method || 'GET', dataType: 'json', timeout: 240000,
                 contentType: 'application/json', data: body ? JSON.stringify(body) : undefined });
+        }
+        async function runOperation(payload, version) {
+            let job = await api('release-jobs', 'POST', payload);
+            const started = Date.now();
+            while (dialog.isConnected && (version == null || version === generation)) {
+                if (job.state === 'completed') return job.result;
+                if (job.state === 'failed') throw { status: job.status, responseJSON: { message: job.message } };
+                if (!job.jobToken) throw new Error('The server returned an invalid release operation. Refresh Jellyfin after updating the plugin.');
+                if (Date.now() - started > 21 * 60 * 1000) throw new Error('The operation is taking too long. Check Sonarr/Radarr activity before retrying.');
+                message.textContent = (payload.download ? 'Checking and sending the selected release' : 'Searching indexers')
+                    + '… ' + Math.floor(Number(job.elapsedSeconds || 0) / 60) + 'm ' + Number(job.elapsedSeconds || 0) % 60
+                    + 's elapsed. Large indexer lists can take several minutes.';
+                // Poll immediately once, then use short requests separated by two seconds.
+                if (job.polled) await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+                if (!dialog.isConnected || version != null && version !== generation) return null;
+                job = await api('release-jobs/' + encodeURIComponent(job.jobToken));
+                job.polled = true;
+            }
+            return null;
         }
         function clearSearch() {
             search = null;
@@ -2142,12 +2162,12 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     try {
                         const payload = { searchToken: search.searchToken, releaseIndex: r.index, rejectCurrent: reject.checked };
                         if (search.seasonNumber != null) payload.seasonNumber = search.seasonNumber;
-                        const result = await api('releases', 'POST', payload);
+                        const result = await runOperation({ download: payload });
                         if (!dialog.isConnected) return;
                         clearSearch();
                         message.textContent = result.message || 'Download queued.';
                     } catch (error) {
-                        if (dialog.isConnected) { clearSearch(); message.textContent = errorText(error); }
+                        if (dialog.isConnected) { clearSearch(); message.textContent = await errorText(error); }
                     } finally {
                         busy = false;
                         if (dialog.isConnected) {
@@ -2198,7 +2218,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 updateScope();
                 message.textContent = searchButton.disabled ? 'No approved episodes or seasons are available on this request.' : 'Select Search releases to see available downloads.';
             } catch (error) {
-                if (dialog.isConnected && version === generation) message.textContent = errorText(error);
+                if (dialog.isConnected && version === generation) message.textContent = await errorText(error);
             }
         }
         requests.forEach(function (req) {
@@ -2224,9 +2244,12 @@ window.jellySeerrLog = window.jellySeerrLog || {
             setControlsDisabled(true);
             message.textContent = 'Searching indexersâ€¦ This may take a few minutes.';
             try {
-                const query = mediaType !== 'tv' ? '' : modeSelect.value === 'season'
-                    ? '?seasonNumber=' + encodeURIComponent(seasonSelect.value) : '?episodeId=' + encodeURIComponent(episodeSelect.value);
-                const found = await api('releases' + query);
+                const payload = { clientToken: Date.now().toString(36) + Math.random().toString(36).slice(2) };
+                if (mediaType === 'tv') {
+                    if (modeSelect.value === 'season') payload.seasonNumber = Number(seasonSelect.value);
+                    else payload.episodeId = Number(episodeSelect.value);
+                }
+                const found = await runOperation(payload, version);
                 if (!dialog.isConnected || version !== generation) return;
                 search = found;
                 const current = dialog.querySelector('[data-current]');
@@ -2243,7 +2266,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 reject.checked = !!found.canRejectCurrent;
                 message.textContent = (found.releases || []).length + ' releases found. Select a different release to download.';
             } catch (error) {
-                if (dialog.isConnected && version === generation) message.textContent = errorText(error);
+                if (dialog.isConnected && version === generation) message.textContent = await errorText(error, true);
             } finally {
                 loading = false;
                 if (dialog.isConnected && version === generation) {

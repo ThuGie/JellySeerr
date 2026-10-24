@@ -196,6 +196,26 @@ public class ReleaseSelectionTests
         + "rejections:[],quality:{quality:{name:'WEBDL-1080p',resolution:1080}},size:1000000,downloadUrl:'https://secret/?apikey=private',"
         + "seasonNumber:1,episodeNumbers:[1],fullSeason:false}");
 
+    [Fact]
+    public async Task Release_search_failure_identifies_upstream_http_status_without_exposing_credentials()
+    {
+        using var fixture = new Fixture { SearchFailure = HttpStatusCode.Unauthorized };
+        var error = await Assert.ThrowsAsync<ReleaseSelectionException>(() => fixture.Search());
+        Assert.Contains("release search returned HTTP 401", error.Message);
+        Assert.Contains("API key", error.Message);
+        Assert.DoesNotContain("secret", error.Message);
+        Assert.Empty(fixture.Mutations);
+    }
+
+    [Fact]
+    public async Task File_lookup_failure_identifies_the_failing_step()
+    {
+        using var fixture = new Fixture { FileLookupFailure = true };
+        var error = await Assert.ThrowsAsync<ReleaseSelectionException>(() => fixture.Search());
+        Assert.Contains("moviefile lookup returned HTTP 404", error.Message);
+        Assert.Empty(fixture.Mutations);
+    }
+
     private sealed class Fixture : HttpMessageHandler, IHttpClientFactory
     {
         public ServarrReleaseService Service { get; }
@@ -210,6 +230,8 @@ public class ReleaseSelectionTests
         public bool SharedEpisodeFile { get; set; }
         public bool ActiveDownload { get; set; }
         public string? Rejection { get; set; }
+        public HttpStatusCode? SearchFailure { get; set; }
+        public bool FileLookupFailure { get; set; }
         private readonly bool _tv;
 
         public Fixture(bool tv = false)
@@ -257,7 +279,10 @@ public class ReleaseSelectionTests
                 return Json(new JArray(episode, outside).ToString());
             }
             if (path.StartsWith("moviefile/") || path.StartsWith("episodefile/"))
+            {
+                if (FileLookupFailure) return Json("{}", HttpStatusCode.NotFound);
                 return Json(new JObject { ["id"] = FileId, ["path"] = "/library/file.mkv", ["sceneName"] = "Old.Release" }.ToString());
+            }
             if (path.StartsWith("history"))
             {
                 JArray history = JArray.Parse("[{id:10,eventType:'grabbed',sourceTitle:'Old.Release',downloadId:'old'},"
@@ -266,6 +291,7 @@ public class ReleaseSelectionTests
             }
             if (path.StartsWith("release?"))
             {
+                if (SearchFailure.HasValue) return Json("{}", SearchFailure.Value);
                 JObject release = Release();
                 release["fullSeason"] = FullSeason;
                 if (Rejection != null) { release["approved"] = false; release["rejected"] = true; release["rejections"] = new JArray(Rejection); }
