@@ -438,3 +438,5 @@ html.jellySeerr-elegantfin .jellySeerr-tv-sections .sectionTitleContainer-cards 
     margin: 0 !important;
     padding-top: 0 !important;
 }
+/* Calendar navigation uses the header icon, without a duplicate text tab. */
+.headerTabs .emby-tab-button[data-jellySeerr-tab="calendar"] { display: none !important; }

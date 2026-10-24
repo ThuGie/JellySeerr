@@ -1,6 +1,6 @@
 # Monitored release calendar
 
-Available in **1.0.23.0**. Click the small calendar icon in Jellyfin's top header, the **Release calendar** home tab, or the existing calendar button in Requests. The calendar is a dedicated content page, not a dialog. Its home route includes `jellySeerrTab=calendar` so it can be bookmarked. The icon is available in the classic header and the experimental layout's app bar.
+Available in **1.0.23.0**. Click the small calendar icon in Jellyfin's top header or the existing calendar button in Requests. The calendar is a dedicated content page, not a dialog. Its home route includes `jellySeerrTab=calendar` so it can be bookmarked. The icon is available in the classic header and the experimental layout's app bar.
 
 ## What appears
 

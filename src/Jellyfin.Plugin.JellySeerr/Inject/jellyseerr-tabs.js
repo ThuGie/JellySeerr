@@ -833,6 +833,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             button.className = 'emby-tab-button emby-button';
             button.setAttribute('data-jellySeerr-tab', id);
             button.appendChild(titleEl);
+            this.setTabButtonTitle(button, id, title);
             return button;
         },
 
@@ -841,6 +842,14 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 return;
             }
             const titleEl = button.querySelector('.emby-button-foreground');
+            if (id === 'calendar') {
+                // Retain the panel index required by Jellyfin; navigation uses the header icon.
+                button.hidden = true;
+                button.tabIndex = -1;
+                button.setAttribute('aria-hidden', 'true');
+                if (titleEl) titleEl.textContent = '';
+                return;
+            }
             if (titleEl) {
                 titleEl.textContent = this.resolveTabTitle(id, title);
             }

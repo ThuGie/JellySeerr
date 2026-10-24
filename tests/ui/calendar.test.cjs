@@ -88,6 +88,11 @@ test('header icon opens the native calendar page and is not duplicated on update
         await plugin.ensureNativeTabs();
         plugin.ensureCalendarHeaderIcon({ tabs: plugin.getDefaultTabConfig() });
         assert.equal(f.w.document.querySelectorAll('[data-jellySeerr-calendar-nav]').length, 1);
+        const internalCalendarTab = f.q('.emby-tab-button[data-jellySeerr-tab="calendar"]');
+        assert.equal(internalCalendarTab.hidden, true);
+        assert.equal(internalCalendarTab.tabIndex, -1);
+        assert.equal(internalCalendarTab.textContent, '');
+        assert.equal(plugin.buildModernNavSlots({ tabs: plugin.getDefaultTabConfig() }).some(tab => tab.id === 'calendar'), false);
         const icon = f.q('[data-jellySeerr-calendar-nav]');
         assert.equal(icon.getAttribute('aria-label'), 'Release calendar');
         assert.match(icon.href, /jellySeerrTab=calendar/);

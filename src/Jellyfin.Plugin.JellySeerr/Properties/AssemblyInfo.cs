@@ -2,5 +2,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("Jellyfin.Plugin.JellySeerr")]
 [assembly: AssemblyDescription("Movies, TV, and Requests tabs for Seerr.")]
-[assembly: AssemblyVersion("1.0.24.0")]
-[assembly: AssemblyFileVersion("1.0.24.0")]
+[assembly: AssemblyVersion("1.0.25.0")]
+[assembly: AssemblyFileVersion("1.0.25.0")]
