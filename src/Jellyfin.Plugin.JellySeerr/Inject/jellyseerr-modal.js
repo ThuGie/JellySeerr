@@ -29,6 +29,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     let activeDetailsRoot = null;
     let activeSeasonRoot = null;
     let activeQualityRoot = null;
+    let activeReleaseDialog = null;
     let escapeHandler = null;
     let pendingRequestContext = null;
     let clientSettingsCache = {};
@@ -1203,6 +1204,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
     }
 
     function closeDetailsModal() {
+        if (activeReleaseDialog) activeReleaseDialog.close();
         pendingRequestContext = null;
         closeQualityModal();
         closeSeasonModal();
@@ -1950,6 +1952,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                                                     ? `<button type="button" class="bst-btn-trailer" data-action="trailer" data-trailer-key="${escapeHtml(trailerKey)}">Trailer</button>`
                                                     : ''}
                                                 <button type="button" class="bst-btn-ghost" data-action="watchlist" data-watchlisted="${isOnWatchlist(data) ? 'true' : 'false'}">${isOnWatchlist(data) ? 'Remove from watchlist' : 'Watchlist'}</button>
+                                                <button type="button" class="bst-btn-ghost" data-action="advanced-download">Advanced download</button>
                                                 ${browseUrl && tmdbId
                                                     ? `<button type="button" class="bst-btn-ghost" data-action="open-seerr">Open in Seerr</button>`
                                                     : ''}
@@ -2007,7 +2010,195 @@ window.jellySeerrLog = window.jellySeerrLog || {
             </div>`;
     }
 
+    function openReleasePicker(data, mediaType) {
+        if (activeReleaseDialog) activeReleaseDialog.close();
+        const requests = getRequestRecords(data).filter(function (req) {
+            return [2, 5].indexOf(requestStatusOf(req)) !== -1 && canModifyRequest(req);
+        });
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bst-release-dialog';
+        dialog.setAttribute('aria-labelledby', 'bst-release-heading');
+        dialog.innerHTML = '<div class="bst-release-header"><h2 id="bst-release-heading">Advanced download</h2>'
+            + '<button type="button" class="bst-btn-ghost" data-close aria-label="Close advanced download">Close</button></div>'
+            + '<p>Choose a release for your approved request. Replacing a file affects everyone who watches it.</p>'
+            + '<div class="bst-release-controls"><label>Request <select data-request></select></label>'
+            + '<label data-episode-label hidden>Episode <select data-episode></select></label>'
+            + '<button type="button" class="bst-btn-request" data-search>Search releases</button></div>'
+            + '<div class="bst-release-controls"><label>Filter <input data-filter type="search" placeholder="Release, quality or indexer" /></label>'
+            + '<label><input data-show-rejected type="checkbox" /> Show unavailable releases</label></div>'
+            + '<div data-current hidden><p data-current-name></p><label><input data-reject type="checkbox" /> '
+            + 'Mark the current release as bad so it is skipped next time (only this release).</label><p data-current-help></p></div>'
+            + '<p data-message role="status" aria-live="polite"></p><div data-results class="bst-release-results"></div>';
+        document.body.appendChild(dialog);
+        activeReleaseDialog = dialog;
+        const requestSelect = dialog.querySelector('[data-request]');
+        const episodeSelect = dialog.querySelector('[data-episode]');
+        const searchButton = dialog.querySelector('[data-search]');
+        const message = dialog.querySelector('[data-message]');
+        const results = dialog.querySelector('[data-results]');
+        const reject = dialog.querySelector('[data-reject]');
+        let search = null;
+        let loading = false;
+        let generation = 0;
+        let busy = false;
+        function errorText(error) {
+            try {
+                const body = error && (error.responseJSON || JSON.parse(error.responseText || '{}'));
+                return body && body.message || 'Could not complete the download operation. Check activity before retrying.';
+            } catch (_) { return 'Could not reach the download service. Check activity before retrying.'; }
+        }
+        function api(path, method, body) {
+            return ApiClient.ajax({ url: ApiClient.getUrl('JellySeerr/request/' + requestSelect.value + '/' + path),
+                type: method || 'GET', dataType: 'json', timeout: 240000,
+                contentType: 'application/json', data: body ? JSON.stringify(body) : undefined });
+        }
+        function clearSearch() {
+            search = null;
+            results.replaceChildren();
+            dialog.querySelector('[data-current]').hidden = true;
+        }
+        function renderRows() {
+            results.replaceChildren();
+            if (!search || loading) return;
+            const filter = dialog.querySelector('[data-filter]').value.trim().toLowerCase();
+            const showRejected = dialog.querySelector('[data-show-rejected]').checked;
+            const rows = (search.releases || []).filter(function (r) {
+                return (r.selectable || r.current || showRejected)
+                    && [r.title, r.quality, r.indexer].join(' ').toLowerCase().includes(filter);
+            });
+            if (!rows.length) {
+                const empty = document.createElement('p');
+                empty.textContent = 'No matching releases. Try showing unavailable releases, or search again later.';
+                results.appendChild(empty);
+            }
+            rows.forEach(function (r) {
+                const row = document.createElement('article');
+                row.className = 'bst-release-row';
+                const name = document.createElement('strong');
+                name.textContent = r.title || 'Unnamed release';
+                const meta = document.createElement('p');
+                meta.textContent = [r.quality, Number.isFinite(Number(r.size)) ? (Number(r.size) / 1073741824).toFixed(2) + ' GB' : '',
+                    r.indexer, r.seeders != null ? r.seeders + ' seeders' : '', r.protocol].filter(Boolean).join(' · ');
+                const note = document.createElement('p');
+                note.textContent = [r.note].concat(r.rejections || []).filter(Boolean).join(' · ');
+                const choose = document.createElement('button');
+                choose.type = 'button';
+                choose.className = 'bst-btn-request';
+                choose.textContent = r.current ? 'Current release' : search.hasFile ? 'Replace with this' : 'Download this';
+                choose.disabled = busy || !r.selectable;
+                choose.addEventListener('click', async function () {
+                    const prompt = search.hasFile
+                        ? 'Download this release and remove the current library file after the download is accepted?'
+                            + (reject.checked ? ' The current release will also be marked as bad.' : '')
+                        : 'Send this release to the download client?';
+                    if (!window.confirm(prompt)) return;
+                    busy = true;
+                    requestSelect.disabled = episodeSelect.disabled = searchButton.disabled = reject.disabled = true;
+                    renderRows();
+                    message.textContent = 'Sending selected release…';
+                    try {
+                        const result = await api('releases', 'POST', { searchToken: search.searchToken, releaseIndex: r.index, rejectCurrent: reject.checked });
+                        if (!dialog.isConnected) return;
+                        clearSearch();
+                        message.textContent = result.message || 'Download queued.';
+                    } catch (error) {
+                        if (dialog.isConnected) { clearSearch(); message.textContent = errorText(error); }
+                    } finally {
+                        busy = false;
+                        if (dialog.isConnected) {
+                            requestSelect.disabled = episodeSelect.disabled = searchButton.disabled = false;
+                        }
+                    }
+                });
+                row.append(name, meta, note, choose);
+                results.appendChild(row);
+            });
+        }
+        async function loadOptions() {
+            const version = ++generation;
+            clearSearch();
+            searchButton.disabled = true;
+            episodeSelect.replaceChildren();
+            message.textContent = 'Loading download options…';
+            try {
+                const options = await api('downloads');
+                if (!dialog.isConnected || version !== generation) return;
+                dialog.querySelector('[data-episode-label]').hidden = !options.isTv;
+                (options.episodes || []).forEach(function (e) {
+                    const option = document.createElement('option');
+                    option.value = e.id;
+                    option.textContent = 'S' + e.seasonNumber + ' E' + e.episodeNumber + ' — ' + (e.title || '') + (e.hasFile ? ' (downloaded)' : '');
+                    episodeSelect.appendChild(option);
+                });
+                searchButton.disabled = options.isTv && !episodeSelect.options.length;
+                message.textContent = searchButton.disabled ? 'No approved episodes are available on this request.' : 'Select Search releases to see available downloads.';
+            } catch (error) {
+                if (dialog.isConnected && version === generation) message.textContent = errorText(error);
+            }
+        }
+        requests.forEach(function (req) {
+            const option = document.createElement('option');
+            option.value = requestIdOf(req);
+            const seasons = (req.seasons || []).map(function (s) { return s.seasonNumber; }).join(', ');
+            option.textContent = (requestIs4k(req) ? '4K' : 'Standard') + ' request #' + requestIdOf(req)
+                + (mediaType === 'tv' && seasons ? ' · Seasons ' + seasons : '');
+            requestSelect.appendChild(option);
+        });
+        requestSelect.addEventListener('change', loadOptions);
+        episodeSelect.addEventListener('change', function () { ++generation; clearSearch(); message.textContent = 'Search for the selected episode.'; });
+        dialog.querySelector('[data-filter]').addEventListener('input', renderRows);
+        dialog.querySelector('[data-show-rejected]').addEventListener('change', renderRows);
+        searchButton.addEventListener('click', async function () {
+            const version = ++generation;
+            clearSearch();
+            loading = true;
+            searchButton.disabled = requestSelect.disabled = episodeSelect.disabled = true;
+            message.textContent = 'Searching indexers… This may take a few minutes.';
+            try {
+                const found = await api('releases' + (mediaType === 'tv' ? '?episodeId=' + encodeURIComponent(episodeSelect.value) : ''));
+                if (!dialog.isConnected || version !== generation) return;
+                search = found;
+                const current = dialog.querySelector('[data-current]');
+                current.hidden = !found.hasFile;
+                dialog.querySelector('[data-current-name]').textContent = 'Current: ' + found.currentRelease;
+                dialog.querySelector('[data-current-help]').textContent = found.message || '';
+                reject.disabled = !found.canRejectCurrent;
+                reject.checked = !!found.canRejectCurrent;
+                message.textContent = (found.releases || []).length + ' releases found. Select a different release to download.';
+            } catch (error) {
+                if (dialog.isConnected && version === generation) message.textContent = errorText(error);
+            } finally {
+                loading = false;
+                if (dialog.isConnected && version === generation) {
+                    searchButton.disabled = requestSelect.disabled = episodeSelect.disabled = false;
+                    renderRows();
+                }
+            }
+        });
+        function close() { if (!busy) dialog.close(); }
+        dialog.querySelector('[data-close]').addEventListener('click', close);
+        dialog.addEventListener('keydown', function (event) {
+            event.stopPropagation();
+            if (event.key === 'Escape') { event.preventDefault(); close(); }
+        });
+        dialog.addEventListener('cancel', function (event) { event.preventDefault(); close(); });
+        dialog.addEventListener('close', function () {
+            ++generation;
+            dialog.remove();
+            if (activeReleaseDialog === dialog) activeReleaseDialog = null;
+        });
+        dialog.showModal();
+        if (requests.length) loadOptions();
+        else {
+            searchButton.disabled = true;
+            message.textContent = 'Request this title first. Advanced downloads become available once your request is approved. You can also replace files from your completed requests.';
+        }
+    }
+
     function bindDetailsModal(root, data, mediaId, mediaType) {
+        root.querySelector('[data-action="advanced-download"]').addEventListener('click', function () {
+            openReleasePicker(data, mediaType);
+        });
         const title = data.title || data.name || 'Details';
         const trailerKey = getTrailerKey(data);
         const tmdbId = data.id;

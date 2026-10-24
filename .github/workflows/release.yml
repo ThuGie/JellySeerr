@@ -59,6 +59,19 @@ jobs:
         run: |
           dotnet build "${{ env.CSPROJ }}" --configuration Release -p:JellyfinVersion=${{ env.JELLYFIN_VERSION }}
 
+      - name: Test plugin
+        run: dotnet test JellySeerr.sln --configuration Release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test release picker
+        run: |
+          node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-modal.js
+          npm ci --prefix tests/ui
+          npm test --prefix tests/ui
+
       - name: Package release zip
         id: package
         run: |

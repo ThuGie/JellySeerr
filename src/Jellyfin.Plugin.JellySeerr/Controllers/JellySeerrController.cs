@@ -591,6 +591,79 @@ public class JellySeerrController : ControllerBase
     public Task<IActionResult> CreateIssue([FromServices] IUserManager userManager, [FromBody] IssuePayload payload, CancellationToken cancellationToken) =>
         ProxyUser(userManager, (id, name) => _requestService.CreateIssueAsync(id, name, payload, cancellationToken));
 
+    [HttpGet("request/{id:int}/downloads")]
+    [Authorize]
+    public Task<IActionResult> DownloadOptions(int id, [FromServices] IUserManager users,
+        [FromServices] ServarrReleaseService releases, CancellationToken cancellationToken) =>
+        WithReleaseContext(id, users, context => releases.OptionsAsync(context, cancellationToken), cancellationToken);
+
+    [HttpGet("request/{id:int}/releases")]
+    [Authorize]
+    public Task<IActionResult> SearchReleases(int id, [FromServices] IUserManager users,
+        [FromServices] ServarrReleaseService releases, [FromQuery] int episodeId = 0, CancellationToken cancellationToken = default) =>
+        WithReleaseContext(id, users, context => releases.SearchAsync(context, episodeId, cancellationToken), cancellationToken);
+
+    [HttpPost("request/{id:int}/releases")]
+    [Authorize]
+    public Task<IActionResult> DownloadRelease(int id, [FromServices] IUserManager users,
+        [FromServices] ServarrReleaseService releases, [FromBody] ReleaseDownloadPayload payload, CancellationToken cancellationToken) =>
+        WithReleaseContext(id, users, context => releases.DownloadAsync(context, payload, cancellationToken), cancellationToken);
+
+    private async Task<IActionResult> WithReleaseContext(int requestId, IUserManager users,
+        Func<ReleaseContext, Task<JObject>> action, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        Guid userId = GetUserId();
+        string? username = GetUsername(users);
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(username)) return Forbid();
+        SeerrUserMatch? match = await _userMappingService.ResolveAsync(userId, username, ct).ConfigureAwait(false);
+        if (match?.Mapped != true) return Forbid();
+        try
+        {
+            // Fetch uncached state for every operation, including the final grab. Pending/declined
+            // requests cannot use direct Arr access to bypass Seerr approval or quota handling.
+            JObject? request = await _seerr.GetJsonAsync($"/api/v1/request/{requestId}", null, ct).ConfigureAwait(false) as JObject;
+            if (request == null) return NotFound(new { message = "Request could not be loaded." });
+            if (!ReleaseSelectionPolicy.CanAccess(request, match.Id, IsAdministrator(users, userId, match)))
+                return StatusCode(403, new { message = "Only the requester or a manager can choose downloads for an approved request." });
+            string? type = request.Value<string>("type");
+            if (type is not ("movie" or "tv")) return BadRequest(new { message = "Unsupported media type." });
+            bool is4k = request.Value<bool?>("is4k") == true;
+            PluginConfiguration config = JellySeerrPlugin.Instance.Configuration;
+            if (!UserMappingService.HasRequestPermission(match.Permissions, type, is4k) || is4k && config.Disable4k)
+                return Forbid();
+            string serverType = type == "tv" ? "sonarr" : "radarr";
+            // Resolve the request's actual server, including separate 4K/anime instances. Never use
+            // an arbitrary default server with coincidentally identical internal movie/episode IDs.
+            int? serverId = request["media"]?.Value<int?>(is4k ? "serviceId4k" : "serviceId") ?? request.Value<int?>("serverId");
+            JArray? servers = await _seerr.GetJsonAsync($"/api/v1/settings/{serverType}", null, ct).ConfigureAwait(false) as JArray;
+            JObject? server = servers?.OfType<JObject>().FirstOrDefault(s => serverId.HasValue
+                ? s.Value<int?>("id") == serverId : s.Value<bool?>("isDefault") == true && (s.Value<bool?>("is4k") == true) == is4k);
+            if (server == null) return StatusCode(409, new { message = "The request's Sonarr/Radarr server could not be resolved from Seerr settings." });
+            string? directUrl = type == "tv" ? config.SonarrUrl : config.RadarrUrl;
+            string? directKey = type == "tv" ? config.SonarrApiKey : config.RadarrApiKey;
+            // Seerr may use a Docker-only hostname. An administrator's plugin connection for
+            // the same API key supplies the address reachable from the Jellyfin process.
+            if (!string.IsNullOrWhiteSpace(directKey) && directKey == server.Value<string>("apiKey")
+                && Uri.TryCreate(directUrl, UriKind.Absolute, out Uri? direct) && direct.Scheme is "http" or "https")
+            {
+                server = (JObject)server.DeepClone();
+                server["hostname"] = direct.Host;
+                server["port"] = direct.Port;
+                server["useSsl"] = direct.Scheme == "https";
+                server["baseUrl"] = direct.AbsolutePath.TrimEnd('/');
+            }
+            bool allow4k = is4k && !config.Disable4k && UserMappingService.HasRequestPermission(match.Permissions, type, true);
+            JObject result = await action(new ReleaseContext(userId, request, server, allow4k)).ConfigureAwait(false);
+            return Content(result.ToString(Newtonsoft.Json.Formatting.None), "application/json");
+        }
+        catch (ReleaseSelectionException ex) { return StatusCode(ex.Status, new { message = ex.Message }); }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or Newtonsoft.Json.JsonException)
+        {
+            return StatusCode(502, new { message = "The download service could not complete this operation. Refresh the search and check download activity before retrying." });
+        }
+    }
+
     [HttpGet("seerr/{*path}")]
     [Authorize]
     public Task<IActionResult> SeerrProxyGet(string path, [FromServices] IUserManager userManager, CancellationToken cancellationToken) =>

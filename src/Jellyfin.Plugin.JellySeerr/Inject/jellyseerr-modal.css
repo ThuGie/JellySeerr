@@ -1051,6 +1051,37 @@
     object-fit: cover;
 }
 
+.bst-release-dialog {
+    width: min(960px, calc(100vw - 32px));
+    max-height: 85vh;
+    box-sizing: border-box;
+    padding: 24px;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 16px;
+    background: #151923;
+    color: #f0f2f7;
+    overflow-y: auto;
+}
+.bst-release-dialog::backdrop { background: rgba(0, 0, 0, .75); }
+.bst-release-dialog [hidden] { display: none !important; }
+.bst-release-header, .bst-release-controls { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.bst-release-header { justify-content: space-between; }
+.bst-release-header h2 { margin: 0; }
+.bst-release-controls label { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.bst-release-controls select, .bst-release-controls input[type="search"] {
+    min-width: 0; max-width: 100%; padding: 8px; border: 1px solid #666;
+    border-radius: 6px; background: #252b38; color: inherit;
+}
+.bst-release-row { padding: 16px 0; border-top: 1px solid #394050; overflow-wrap: anywhere; }
+.bst-release-row p { color: #b8c1d1; font-size: .9em; }
+.bst-release-dialog button:disabled { opacity: .45; cursor: default; }
+.bst-release-dialog :focus-visible { outline: 2px solid #8bbfff; outline-offset: 3px; }
+@media (max-width: 600px) {
+    .bst-release-dialog { padding: 16px; }
+    .bst-release-controls label { width: 100%; }
+    .bst-release-controls select { flex: 1; }
+}
+
 .bst-related-name {
     font-size: 0.75rem;
     line-height: 1.25;

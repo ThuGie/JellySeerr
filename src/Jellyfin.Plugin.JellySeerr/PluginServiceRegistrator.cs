@@ -33,5 +33,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<DiscoveryService>();
         serviceCollection.AddSingleton<ServarrProgressService>();
+        serviceCollection.AddSingleton<ServarrReleaseService>();
     }
 }

@@ -15,3 +15,14 @@ jobs:
           dotnet-version: "9.0.x"
       - name: Build
         run: dotnet build JellySeerr.sln --configuration Release
+      - name: Test
+        run: dotnet test JellySeerr.sln --configuration Release --no-build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check browser scripts
+        run: node --check src/Jellyfin.Plugin.JellySeerr/Inject/jellyseerr-modal.js
+      - name: Test release picker
+        run: |
+          npm ci --prefix tests/ui
+          npm test --prefix tests/ui

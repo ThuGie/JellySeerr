@@ -66,6 +66,7 @@ Server-side request submit calls `HasRequestPermission` again before POSTing to 
 | Cancel request | Same as change (owner or admin) |
 | Approve / Decline / Retry | `canManageRequests` |
 | Unmonitor in Arr | Owner of a request on that title **or** admin |
+| Advanced download / Replace file | Owner of an approved/completed request **or** manager; request permissions still required; TV restricted to approved seasons |
 | Open in Seerr / Radarr / Sonarr | `canOpenLocalServices` (admin + LAN) |
 | Watchlist / Report issue | Mapped user (Seerr enforces further) |
 | Requests tab “All” | Manage-requests + `EnableManagerTools` |
