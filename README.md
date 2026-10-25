@@ -54,6 +54,8 @@ https://raw.githubusercontent.com/ThuGie/JellySeerr/main/manifest.json
 
 ## What users see
 
+Pending request cards include **Approve** and **Decline** buttons for managers. Enable **approve / decline / all-requests for managers** in the plugin settings and grant the linked Seerr account **Manage Requests** (or Admin) permission. Use the **Pending Approval** filter to find requests awaiting a decision. Auto-approval is controlled by user permissions in Seerr.
+
 - **Release calendar** — click the small calendar icon in the top header for a full page of monitored Sonarr episodes. Includes month/agenda views, local air times, title filters, and series awaiting an air date. It includes other users' monitored titles. [Calendar guide](doc/monitored-calendar.md).
 
 The [user tools guide](doc/user-tools.md) covers the release calendar, personal notification preferences, categorized issue reporting and comments, replacement history, release comparison, and failed/stalled download recovery. Calendar and Notifications are in Requests; the other tools are in title details and Advanced download.

@@ -367,6 +367,51 @@ window.jellySeerrLog = window.jellySeerrLog || {
         return !!(state.clientSettings && state.clientSettings.canOpenLocalServices);
     }
 
+    const pendingModeration = new Set();
+
+    function renderModerationActions(item) {
+        if (!canViewAllRequests() || !item.isPending || !(Number(item.id) > 0)) return '';
+        const id = escapeHtml(String(item.id));
+        const busy = pendingModeration.has(String(item.id));
+        return `<div class="jellySeerr-request-moderation" aria-busy="${busy}">
+            <button type="button" data-request-action="approve" data-request-id="${id}" ${busy ? 'disabled' : ''}>Approve</button>
+            <button type="button" data-request-action="decline" data-request-id="${id}" ${busy ? 'disabled' : ''}>Decline</button>
+        </div>`;
+    }
+
+    async function moderateRequest(container, button, action) {
+        const id = button.getAttribute('data-request-id');
+        if (!canViewAllRequests() || !/^\d+$/.test(id || '') || pendingModeration.has(id)) return;
+        pendingModeration.add(id);
+        const setBusy = busy => container.querySelectorAll('.jellySeerr-request-moderation button').forEach(b => {
+            if (b.getAttribute('data-request-id') === id) {
+                b.disabled = busy;
+                b.parentElement.setAttribute('aria-busy', String(busy));
+            }
+        });
+        setBusy(true);
+        const message = container.querySelector('.jellySeerr-requests-action-message');
+        if (message) message.textContent = action === 'approve' ? 'Approving request…' : 'Declining request…';
+        try {
+            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellySeerr/request/' + id + '/' + action), dataType: 'json' });
+            if (message) message.textContent = action === 'approve' ? 'Request approved.' : 'Request declined.';
+            // Supersede any older list lookup so it cannot restore the pending state.
+            loadRequests(container);
+            refreshQuotaChip(container);
+        } catch (err) {
+            let detail = '';
+            try {
+                const body = err && typeof err.clone === 'function' ? await err.clone().json()
+                    : err && (err.responseJSON || JSON.parse(err.responseText || '{}'));
+                if (body && typeof body.message === 'string') detail = body.message;
+            } catch (_) { /* A proxy may return HTML instead of a JSON error. */ }
+            if (message) message.textContent = detail || 'Could not update the request. Refresh requests to check its status before retrying.';
+        } finally {
+            pendingModeration.delete(id);
+            setBusy(false);
+        }
+    }
+
     function renderCardActions(item) {
         const parts = [];
         if (isPlayableRequest(item) && item.jellyfinItemId) {
@@ -573,6 +618,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                 ${seasonsHtml}
                 ${progressSpacerHtml}
                 ${progressHtml}
+                ${renderModerationActions(item)}
             </div>`;
     }
 
@@ -977,6 +1023,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     ${filterButtons}
                 </div>
             </div>
+            <div class="jellySeerr-requests-action-message padded-left padded-right" role="status" aria-live="polite"></div>
             <div class="jellySeerr-requests-body"></div>`;
     }
 
@@ -1015,6 +1062,7 @@ window.jellySeerrLog = window.jellySeerrLog || {
         container.dataset.jellySeerrRequestsBound = 'true';
 
         container.addEventListener('keydown', function (event) {
+            if (event.target.closest('button, a, input, select, textarea')) return;
             if (event.key !== 'Enter' && event.key !== ' ') {
                 return;
             }
@@ -1045,6 +1093,8 @@ window.jellySeerrLog = window.jellySeerrLog || {
                     navigateToJellyfinItem(actionBtn.getAttribute('data-item-id'));
                 } else if (action === 'seerr') {
                     openJellyseerrManage(actionBtn.getAttribute('data-tmdb-id'), actionBtn.getAttribute('data-media-type'));
+                } else if (action === 'approve' || action === 'decline') {
+                    moderateRequest(container, actionBtn, action);
                 }
                 return;
             }
