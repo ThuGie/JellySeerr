@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.27.0",
+        "changelog": "Add Approve and Decline buttons directly to pending request cards in the Requests tab for Seerr managers. Prevent duplicate submissions, refresh after approval or decline, show action errors, and preserve keyboard navigation.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.27.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "B1836AD0AA3BF1DEC6A3B2B53D937B78",
+        "timestamp": "2026-10-25T20:50:39.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.26.0",
         "changelog": "Fix Agenda showing episodes from adjacent months. Limit agenda entries to the selected month using local air dates, including correct month/year boundaries and empty states; retain adjacent days in the month grid.",
         "targetAbi": "10.11.0.0",
