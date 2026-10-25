@@ -9,6 +9,15 @@
     "imageUrl": "https://raw.githubusercontent.com/ThuGie/JellySeerr/main/thumb.png",
     "versions": [
       {
+        "version": "1.0.26.0",
+        "changelog": "Fix Agenda showing episodes from adjacent months. Limit agenda entries to the selected month using local air dates, including correct month/year boundaries and empty states; retain adjacent days in the month grid.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellySeerr/releases/download/v1.0.26.0/Jellyfin.Plugin.JellySeerr_10.11.0.zip",
+        "checksum": "02C981F676D4D2A7FCE2201D333F4801",
+        "timestamp": "2026-10-25T13:14:01.0000000Z",
+        "dependencies": []
+      },
+      {
         "version": "1.0.25.0",
         "changelog": "Remove the duplicate Release calendar text tab from the home navigation. Keep the top-header calendar icon opening the dedicated page, including bookmarked navigation.",
         "targetAbi": "10.11.0.0",
