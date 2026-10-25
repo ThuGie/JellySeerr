@@ -14,10 +14,17 @@ function data() {
         { title: '<img src=x>', tmdbId: 456, episodeTitle: 'Already available', seasonNumber: 1, episodeNumber: 4, airDateUtc: date.toISOString(), hasFile: true, server: '4K' }
     ], awaitingDates: [{ title: 'Waiting Show', tmdbId: 789, server: 'Main' }], failures: [] };
 }
-function fixture({ navigation = false, error = null } = {}) {
+function fixture({ navigation = false, error = null, clockDate = null } = {}) {
     const html = navigation ? '<header class="skinHeader"><div class="headerRight"></div></header><div class="headerTabs"><div is="emby-tabs"><div class="emby-tabs-slider"><button class="emby-tab-button" data-index="0">Home</button><button class="emby-tab-button" data-index="1">Favorites</button></div></div></div><div id="indexPage" class="page"><div id="homeTab" class="tabContent is-active" data-index="0"></div><div id="favoritesTab" class="tabContent" data-index="1"></div></div>' : '<div class="jellySeerr-calendar-sections"></div>';
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://jellyfin.test/web/#/home.html' });
     const w = dom.window, calls = [];
+    if (clockDate) {
+        const OriginalDate = w.Date;
+        w.Date = class extends OriginalDate {
+            constructor(...args) { super(...(args.length ? args : [clockDate.getTime()])); }
+            static now() { return clockDate.getTime(); }
+        };
+    }
     w.ApiClient = { getUrl: p => p, ajax: async options => { calls.push(options); if (error) throw error; return data(); } };
     w.eval(calendar);
     if (navigation) {
@@ -140,5 +147,38 @@ test('small screens start with the agenda view', async () => {
         assert.equal(f.q('select[aria-label="Calendar view"]').value, 'agenda');
         assert.equal(f.q('.jellySeerr-calendar-grid'), null);
         assert.equal(f.w.document.querySelectorAll('.jellySeerr-calendar-event').length, 2);
+    } finally { f.close(); }
+});
+
+test('November agenda excludes October and December while the month grid retains adjacent days', async () => {
+    const f = fixture({ clockDate: new Date(2026, 10, 15) });
+    try {
+        const entries = [
+            ['October spillover', new Date(2026, 9, 31, 23, 59)],
+            ['November start', new Date(2026, 10, 1, 0, 0)],
+            ['November end', new Date(2026, 10, 30, 23, 59)],
+            ['December spillover', new Date(2026, 11, 1, 0, 0)]
+        ];
+        f.w.ApiClient.ajax = async () => ({ message: 'Loaded.', events: entries.map(([title, date]) => ({ title, tmdbId: 123, airDateUtc: date.toISOString(), seasonNumber: 1, episodeNumber: 1 })), awaitingDates: [] });
+        f.w.jellySeerrCalendar.mount(f.q('.jellySeerr-calendar-sections')); await tick();
+        assert.equal(f.w.document.querySelectorAll('.jellySeerr-calendar-event').length, 4);
+        const view = f.q('select[aria-label="Calendar view"]'); view.value = 'agenda'; view.dispatchEvent(new f.w.Event('change'));
+        const schedule = f.q('.jellySeerr-calendar-schedule');
+        assert.equal(schedule.querySelectorAll('.jellySeerr-calendar-event').length, 2);
+        assert.match(schedule.textContent, /November start/); assert.match(schedule.textContent, /November end/);
+        assert.doesNotMatch(schedule.textContent, /October spillover|December spillover/);
+        view.value = 'month'; view.dispatchEvent(new f.w.Event('change'));
+        assert.equal(schedule.querySelectorAll('.jellySeerr-calendar-event').length, 4);
+    } finally { f.close(); }
+});
+
+test('agenda displays an empty state when only adjacent-month episodes were returned', async () => {
+    const f = fixture({ clockDate: new Date(2026, 0, 15) });
+    try {
+        f.w.ApiClient.ajax = async () => ({ message: 'Loaded.', events: [{ title: 'Last year', airDateUtc: new Date(2025, 11, 31, 23, 59).toISOString(), seasonNumber: 1, episodeNumber: 1 }], awaitingDates: [] });
+        f.w.jellySeerrCalendar.mount(f.q('.jellySeerr-calendar-sections')); await tick();
+        const view = f.q('select[aria-label="Calendar view"]'); view.value = 'agenda'; view.dispatchEvent(new f.w.Event('change'));
+        assert.equal(f.q('.jellySeerr-calendar-event'), null);
+        assert.match(f.q('.jellySeerr-calendar-schedule').textContent, /No monitored episodes/);
     } finally { f.close(); }
 });

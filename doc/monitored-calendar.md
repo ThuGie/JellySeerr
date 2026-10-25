@@ -12,6 +12,8 @@ Available in **1.0.23.0**. Click the small calendar icon in Jellyfin's top heade
 
 Air dates do not guarantee a download. Future seasons with no announced episode dates cannot be placed on the grid. A monitored ended series can still have dated episodes in the selected calendar range. Clicking a title opens TV details when Sonarr supplies its TMDB ID.
 
+Agenda includes only the selected month, using the browser's local air dates. The month grid includes adjacent days to fill its weeks; those extra days are excluded when switching to Agenda (fixed in 1.0.26.0).
+
 This page focuses on monitored TV episodes. The older personal movie/TV calendar API is retained for compatibility.
 
 ## Setup and access

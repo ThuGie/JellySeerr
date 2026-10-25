@@ -72,7 +72,13 @@
         }
         function render() {
             schedule.replaceChildren(); waiting.replaceChildren();
-            const items = (result.events || []).filter(matches).filter(e => !hide.checked || !e.hasFile);
+            const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+            const items = (result.events || []).filter(matches).filter(e => !hide.checked || !e.hasFile)
+                .filter(e => {
+                    if (view.value === 'month') return true;
+                    const air = new Date(e.airDateUtc);
+                    return air >= month && air < monthEnd;
+                });
             const days = new Map(); items.forEach(item => { const key = dateKey(new Date(item.airDateUtc)); if (!days.has(key)) days.set(key, []); days.get(key).push(item); });
             if (view.value === 'month') {
                 const labels = node('div', null, schedule); labels.className = 'jellySeerr-calendar-weekdays';

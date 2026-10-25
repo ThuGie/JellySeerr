@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "Remove the duplicate Release calendar text tab from the home navigation. Keep the top-header calendar icon opening the dedicated page, including bookmarked navigation.",
+  "changelog": "Fix Agenda showing episodes from adjacent months. Limit agenda entries to the selected month using local air dates, including correct month/year boundaries and empty states; retain adjacent days in the month grid.",
   "description": "Movies, TV, and Requests tabs for Seerr. You choose which quality profiles people can pick.",
   "guid": "8f3a2c91-4e7b-4d6a-9c18-2b5e0f7a6d44",
   "name": "JellySeerr",
@@ -8,7 +8,7 @@
   "owner": "ThuGie",
   "targetAbi": "10.11.0.0",
   "timestamp": "2026-09-20T00:00:00.0000000Z",
-  "version": "1.0.25.0",
+  "version": "1.0.26.0",
   "status": "Active",
   "autoUpdate": true,
   "assemblies": [
