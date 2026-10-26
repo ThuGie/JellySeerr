@@ -709,9 +709,27 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             }
 
             const page = document.getElementById('indexPage');
+            const tabs = this.getHeaderTabsElements().tabsEl;
+            const selectedButton = tabs && tabs.querySelector('.emby-tab-button[data-index="' + selectedIndex + '"]');
+            // JellySpot owns activation of Spotify panels. When leaving Spotify,
+            // release its page-wide hiding state before our tabchange guard can
+            // stop its cleanup listener (listener order varies between plugins).
+            if (selectedButton && selectedButton.hasAttribute('data-jellyspot-tab')) return;
+            if (page.classList.contains('jellyspot-is-open')) {
+                if (window.jellySpotPlugin && typeof window.jellySpotPlugin.hidePluginPanels === 'function') {
+                    window.jellySpotPlugin.hidePluginPanels();
+                } else {
+                    page.classList.remove('jellyspot-is-open');
+                    page.querySelectorAll('.tabContent[data-jellyspot-tab]').forEach(function (panel) {
+                        panel.classList.add('hide');
+                        panel.classList.remove('is-active');
+                    });
+                }
+            }
             page.querySelectorAll('.tabContent[data-index]').forEach(function (panel) {
                 const panelIndex = parseInt(panel.getAttribute('data-index'), 10);
                 panel.classList.toggle('is-active', panelIndex === selectedIndex);
+                if (panelIndex === selectedIndex) panel.classList.remove('hide');
             });
         },
 
@@ -777,6 +795,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                     return;
                 }
 
+                self.syncTabPanelsActiveState(index);
                 log.info('blocking Jellyfin tabchange handler for plugin tab index ' + index);
                 event.stopImmediatePropagation();
             }, true);
