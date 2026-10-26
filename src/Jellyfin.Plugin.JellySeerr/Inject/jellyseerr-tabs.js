@@ -1432,7 +1432,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
         },
 
         isContainerPopulated: function (container) {
-            return container.querySelector('.jellySeerr-poster-section') !== null;
+            return container.querySelector('.jellySeerr-poster-section:not(.jellySeerr-skeleton-section), .jellySeerr-carousel-section:not(.jellySeerr-skeleton-section)') !== null;
         },
 
         isGridViewOpen: function (container) {
@@ -1494,6 +1494,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
                 }
 
                 if (self.isContainerPopulated(container)) {
+                    self.refreshScrollers(container);
                     return;
                 }
 
@@ -1535,7 +1536,8 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             container.dataset.jellySeerrLoadId = loadId;
             delete container.dataset.jellySeerrLoaded;
 
-            // Ignore results if user switched tabs or theres a newer load.
+            // Hidden tabs retain their own results. Only discard detached, replaced,
+            // or explicitly cancelled loads; switching tabs must not strand skeletons.
             const finishLoading = function () {
                 if (container.dataset.jellySeerrLoadId !== loadId) {
                     log.info(type + ' tab load finished but was superseded');
@@ -1547,7 +1549,7 @@ if (typeof window.jellySeerrPlugin === 'undefined') {
             };
 
             const isStale = function () {
-                return container.dataset.jellySeerrLoadId !== loadId || !self.isContainerVisible(container) || self.isGridViewOpen(container);
+                return container.dataset.jellySeerrLoadId !== loadId || !container.isConnected || self.isGridViewOpen(container);
             };
 
             const browseTitle = mediaType === 'movie' ? 'Browse by studio' : 'Browse by network';
