@@ -52,6 +52,12 @@ https://raw.githubusercontent.com/ThuGie/JellySeerr/main/manifest.json
 5. On **Requests**, set how often the Requests tab reloads (once a minute by default, or Off).
 6. Save, then refresh Jellyfin. Movies, TV, and Requests show up in the home tab bar.
 
+### Seerr returns `invalid csrf token`
+
+If browsing works but submitting a request fails with `invalid csrf token`, check **Settings → Network → Enable CSRF Protection** in Seerr. When enabled, this setting blocks external API writes, including JellySeerr requests authenticated with an API key. A successful connection test does not verify that Seerr accepts writes.
+
+If you want to enable requests through JellySeerr, turn off **Enable CSRF Protection**, save, restart Seerr, and retry the request in Jellyfin. This disables Seerr's optional CSRF protection for the instance. [Seerr network settings](https://docs.seerr.dev/using-seerr/settings/network/#enable-csrf-protection)
+
 ## What users see
 
 Pending request cards include **Approve** and **Decline** buttons for managers. Enable **approve / decline / all-requests for managers** in the plugin settings and grant the linked Seerr account **Manage Requests** (or Admin) permission. Use the **Pending Approval** filter to find requests awaiting a decision. Auto-approval is controlled by user permissions in Seerr.
